@@ -1,0 +1,9 @@
+# Pi local workflow state
+agent/
+.pi/
+
+# Local expertise store
+.mulch/
+
+# OS/editor noise
+.DS_Store
