@@ -23,4 +23,7 @@ This repository packages local Pi skills.
 
 - Package manifest: `package.json`
 - Skill root: `skills/`
-- Primary skill: `skills/engineering/seeds-architecture-review/SKILL.md`
+- Skills:
+  - `skills/engineering/seeds-architecture-review/SKILL.md`
+  - `skills/engineering/thermo-nuclear-code-quality-review/SKILL.md`
+  - `skills/writing/humanizer/SKILL.md`
