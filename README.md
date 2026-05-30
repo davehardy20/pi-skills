@@ -9,6 +9,11 @@ Local Pi skills package for Dave's workflow.
   - candidate-specific Seeds plans;
   - validation, review, and PR-first closeout;
   - post-outcome Mulch only when justified.
+- `humanizer` — removes common AI-writing patterns while preserving meaning,
+  tone, and voice.
+- `thermo-nuclear-code-quality-review` — runs an intentionally strict
+  maintainability review for abstraction quality, file sprawl, spaghetti
+  branching, and missed simplification opportunities.
 
 ## Attribution
 
@@ -17,6 +22,14 @@ Local Pi skills package for Dave's workflow.
 especially his `improve-codebase-architecture` and `grill-with-docs` skills.
 This package adapts those ideas into Dave's Seeds-first Pi workflow and does not
 vendor or depend on the original skills.
+
+`humanizer` is based on
+[Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing),
+maintained by WikiProject AI Cleanup.
+
+`humanizer` and `thermo-nuclear-code-quality-review` were ported from Dave's
+local `~/.pi/agent/skills/` directory into this package so `pi install
+/Users/dave/tools/pi-skills` can manage them together.
 
 ## Install locally
 
