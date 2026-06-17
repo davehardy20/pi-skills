@@ -7,3 +7,4 @@ agent/
 
 # OS/editor noise
 .DS_Store
+.seeds/
