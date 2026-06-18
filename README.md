@@ -5,6 +5,7 @@ Local Pi skills package for Dave's workflow.
 ## Skills
 
 - `seeds-architecture-review` — adapts architecture deepening reviews into a Seeds-native workflow with:
+  - local supplemental guides for language, deepening, HTML reports, and interface design;
   - optional `ask_user` checkpoints;
   - candidate-specific Seeds plans;
   - validation, review, and PR-first closeout;
@@ -63,7 +64,8 @@ Invoke directly:
 /skill:seeds-architecture-review review the checkout flow architecture
 ```
 
-Or ask naturally for a Seeds-backed architecture review. The skill is intended for repository work where an agent should:
+Or ask naturally for a Seeds-backed architecture review. The skill is intended for repository work
+where an agent should:
 
 1. inspect Seeds first,
 2. produce a temporary visual candidate report,
