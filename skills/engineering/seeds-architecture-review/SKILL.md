@@ -174,6 +174,13 @@ Tell Dave the absolute path.
 Follow [HTML-REPORT.md](HTML-REPORT.md) for the full scaffold, diagram patterns,
 styling guidance, and CDN rules.
 
+Report safety rules:
+
+- Initialise Mermaid with `securityLevel: "strict"`.
+- Escape repo-derived text before placing it in HTML or Mermaid labels.
+- Do not use raw `innerHTML` for file paths, symbols, code excerpts, or repo text.
+- Escape `<`, `>`, `&`, `"`, and `'` in repo-derived values.
+
 Each candidate card should include:
 
 - title;
