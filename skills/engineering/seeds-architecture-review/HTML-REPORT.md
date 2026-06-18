@@ -43,7 +43,7 @@ for Mermaid rendering.
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
       import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "strict" });
     </script>
     <style>
       .seam { stroke-dasharray: 4 4; }
@@ -60,6 +60,13 @@ for Mermaid rendering.
   </body>
 </html>
 ```
+
+Security rules:
+
+- Keep Mermaid `securityLevel` set to `strict`.
+- Escape repo-derived text before placing it in HTML or Mermaid labels.
+- Prefer `textContent` or pre-rendered escaped strings; do not use raw `innerHTML`.
+- Escape `<`, `>`, `&`, `"`, and `'` in file paths, symbols, and code excerpts.
 
 ## Header
 
