@@ -16,6 +16,13 @@ Use this skill to run architecture improvement work without letting an explorato
 become the source of truth. The report helps Dave choose a candidate. Seeds owns the
 candidate, plan, child tasks, implementation state, review, and outcome.
 
+Local supplemental guides are part of this skill:
+
+- [LANGUAGE.md](LANGUAGE.md): terms, principles, and rejected framings.
+- [DEEPENING.md](DEEPENING.md): dependency categories, seam discipline, and test strategy.
+- [HTML-REPORT.md](HTML-REPORT.md): report scaffold, diagram patterns, and styling.
+- [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md): multi-option interface design process.
+
 ## Non-negotiables
 
 - Seeds is canonical after a candidate is selected.
@@ -30,7 +37,8 @@ candidate, plan, child tasks, implementation state, review, and outcome.
 
 ## Architecture vocabulary
 
-Use these words exactly.
+Use these words exactly. See [LANGUAGE.md](LANGUAGE.md) for full definitions, relationships,
+and rejected framings.
 
 - **Module**: anything with an interface and an implementation.
 - **Interface**: everything a caller must know to use a module correctly.
@@ -58,6 +66,8 @@ Key principles:
   seam.
 - **One adapter means a hypothetical seam. Two adapters mean a real seam.**
 - Depth is about leverage, not line-count ratios.
+- Depth is a property of the interface, not the implementation.
+- Internal seams can exist, but should not leak through the external interface.
 
 ## Workflow overview
 
@@ -124,6 +134,9 @@ _Avoid_: Purchase, transaction
 Explore organically. Use available subagents or delegation when helpful. If no
 subagent tool is available, inspect directly.
 
+Use [DEEPENING.md](DEEPENING.md) to classify candidate dependencies before recommending
+how to test across a seam.
+
 Look for:
 
 - shallow modules;
@@ -158,8 +171,8 @@ Open it when the environment supports this:
 
 Tell Dave the absolute path.
 
-The report may use Tailwind and Mermaid from CDNs. It must remain static except
-for Mermaid rendering.
+Follow [HTML-REPORT.md](HTML-REPORT.md) for the full scaffold, diagram patterns,
+styling guidance, and CDN rules.
 
 Each candidate card should include:
 
@@ -284,16 +297,26 @@ Interrogate at least:
 - what is explicitly out of scope;
 - what must be true before PR closeout.
 
+Classify dependencies with [DEEPENING.md](DEEPENING.md) before locking seam placement or
+test strategy.
+
 ## 8. Compare interface alternatives
 
-When interface choice matters, design it more than once.
+When interface choice matters, design it more than once. Use
+[INTERFACE-DESIGN.md](INTERFACE-DESIGN.md) for the full process.
 
-Produce 3 or more alternatives when useful:
+Frame constraints first: concept, callers, dependency category, seam placement, adapters,
+and tests.
+
+Produce 3 or more materially different alternatives when useful:
 
 1. Minimal interface: 1 to 3 entry points, maximum leverage.
 2. Flexible interface: extension-friendly, handles varied callers.
 3. Caller-first interface: common path is trivial.
 4. Ports-and-adapters interface when cross-seam dependencies justify it.
+
+If subagents or orchestration are available, run alternatives in parallel with independent
+briefs. If not, design directly and say so.
 
 Each option should include:
 
@@ -301,7 +324,8 @@ Each option should include:
 - usage example;
 - what the implementation hides;
 - dependency and adapter strategy;
-- trade-offs in depth, locality, seam placement, and tests.
+- test strategy through the interface;
+- trade-offs in depth, locality, seam placement, and caller leverage.
 
 Use a checkpoint for selection when there are 2 to 4 strong options. Previews may
 include short code sketches.
@@ -316,8 +340,10 @@ The plan should include:
 - context and selected candidate;
 - chosen seam;
 - interface choice and rejected alternatives;
+- dependency category and adapter strategy;
 - scope and out-of-scope work;
 - characterization test strategy;
+- test replacement strategy, including obsolete shallow tests to delete;
 - implementation steps;
 - validation commands;
 - review pass;
@@ -332,7 +358,7 @@ Child tasks should be vertical and reviewable. Typical tasks:
 3. Implement behaviour behind the seam.
 4. Migrate first caller.
 5. Migrate remaining callers.
-6. Delete shallow pass-through modules.
+6. Delete shallow pass-through modules and obsolete shallow-module tests.
 7. Update glossary or ADRs only if approved.
 8. Run validation and review.
 9. Open PR and record Seeds outcome.
@@ -409,5 +435,6 @@ or complete.
 - Calling `ask_user` for every question.
 - Introducing seams with only one real adapter.
 - Proposing interfaces before understanding callers and tests.
+- Layering new deep-interface tests over obsolete shallow-module tests.
 - Recording Mulch before validation.
 - Reporting work as complete before review and PR-first closeout are addressed.
