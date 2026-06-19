@@ -12,6 +12,8 @@ Local Pi skills package for Dave's workflow.
   - post-outcome Mulch only when justified.
 - `humanizer` — removes common AI-writing patterns while preserving meaning,
   tone, and voice.
+- `teach` — builds stateful learning workspaces with missions, trusted
+  resources, short HTML lessons, references, and learning records.
 - `thermo-nuclear-code-quality-review` — runs an intentionally strict
   maintainability review for abstraction quality, file sprawl, spaghetti
   branching, and missed simplification opportunities.
@@ -23,6 +25,10 @@ Local Pi skills package for Dave's workflow.
 especially his `improve-codebase-architecture` and `grill-with-docs` skills.
 This package adapts those ideas into Dave's Seeds-first Pi workflow and does not
 vendor or depend on the original skills.
+
+`teach` is adapted from Matt Pocock's MIT-licensed `teach` skill in
+[Skills For Real Engineers](https://github.com/mattpocock/skills). This package
+preserves the stateful teaching workspace model and adapts it for Pi workflows.
 
 `humanizer` is based on
 [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing),
@@ -62,6 +68,10 @@ Invoke directly:
 
 ```text
 /skill:seeds-architecture-review review the checkout flow architecture
+```
+
+```text
+/skill:teach help me learn Rust for building internal CLIs
 ```
 
 Or ask naturally for a Seeds-backed architecture review. The skill is intended for repository work
