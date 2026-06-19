@@ -26,4 +26,5 @@ This repository packages local Pi skills.
 - Skills:
   - `skills/engineering/seeds-architecture-review/SKILL.md`
   - `skills/engineering/thermo-nuclear-code-quality-review/SKILL.md`
+  - `skills/productivity/teach/SKILL.md`
   - `skills/writing/humanizer/SKILL.md`
