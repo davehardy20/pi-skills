@@ -190,11 +190,12 @@ lessons/0001-<dash-case-name>.html
 
 Scan existing lessons for the highest number and increment it.
 
-Open the lesson when supported:
+Open the lesson when supported, passing paths as literal argv arguments instead
+of interpolating raw paths into a shell command:
 
-- macOS: `open <path>`
-- Linux: `xdg-open <path>`
-- Windows: `start <path>`
+- macOS: `open -- "$lesson_path"`
+- Linux: `xdg-open -- "$lesson_path"`
+- Windows PowerShell: `Start-Process -LiteralPath $lessonPath`
 
 If opening fails, report the absolute path.
 
