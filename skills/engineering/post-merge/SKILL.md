@@ -3,7 +3,7 @@ name: post-merge
 description: >
   Run PR post-merge closeout for Pi/Seeds repos. Use when Dave says a PR was
   merged, remote branch was deleted, asks for post-merge tasks, or invokes
-  /post-merge to update local main, close Seeds work, capture follow-ups, and
+  /skill:post-merge to update local main, close Seeds work, capture follow-ups, and
   report cleanup status.
 compatibility: Designed for Pi. Uses Seeds, safe git/GitHub wrappers, and optional Mulch.
 ---
