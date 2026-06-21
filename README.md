@@ -14,6 +14,9 @@ Local Pi skills package for Dave's workflow.
   tone, and voice.
 - `teach` — builds stateful learning workspaces with missions, trusted
   resources, short HTML lessons, references, and learning records.
+- `post-merge` — runs PR post-merge closeout for Pi/Seeds repos, including
+  merge verification, local branch updates, Seeds follow-up handling, and
+  cleanup reporting.
 - `thermo-nuclear-code-quality-review` — runs an intentionally strict
   maintainability review for abstraction quality, file sprawl, spaghetti
   branching, and missed simplification opportunities.
@@ -72,6 +75,10 @@ Invoke directly:
 
 ```text
 /skill:teach help me learn Rust for building internal CLIs
+```
+
+```text
+/skill:post-merge PR 123 was merged; close out the Seeds work
 ```
 
 Or ask naturally for a Seeds-backed architecture review. The skill is intended for repository work
