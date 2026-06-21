@@ -1,16 +1,16 @@
 {
-  "name": "pi-skills",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Dave's local Pi skills package.",
-  "keywords": [
-    "pi-package",
-    "pi-skills",
-    "agent-skills"
-  ],
-  "pi": {
-    "skills": [
-      "./skills"
-    ]
-  }
+	"name": "pi-skills",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Dave's local Pi skills package.",
+	"keywords": [
+		"pi-package",
+		"pi-skills",
+		"agent-skills"
+	],
+	"pi": {
+		"skills": [
+			"./skills"
+		]
+	}
 }

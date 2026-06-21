@@ -110,3 +110,7 @@ This package has no runtime dependencies. Basic local checks:
 node -e 'JSON.parse(require("fs").readFileSync("package.json", "utf8")); console.log("package.json ok")'
 find skills -name SKILL.md -print
 ```
+
+The tiny `src/` and `test/` TypeScript files are smoke inputs for generic Pi
+safe runners, so `run_typecheck` and `run_biome src test` can validate this
+mostly Markdown package without needing runtime dependencies.
