@@ -4,6 +4,9 @@ Local Pi skills package for Dave's workflow.
 
 ## Skills
 
+- `codex-pr-comment` — reads Codex connector PR review comments,
+  checks unresolved non-outdated review threads, implements required fixes, and
+  reports validation.
 - `seeds-architecture-review` — adapts architecture deepening reviews into a Seeds-native workflow with:
   - local supplemental guides for language, deepening, HTML reports, and interface design;
   - optional `ask_user` checkpoints;
@@ -79,6 +82,10 @@ Invoke directly:
 
 ```text
 /skill:post-merge PR 123 was merged; close out the Seeds work
+```
+
+```text
+/skill:codex-pr-comment PR 120 has a Codex review comment; read it and implement if required
 ```
 
 Or ask naturally for a Seeds-backed architecture review. The skill is intended for repository work
