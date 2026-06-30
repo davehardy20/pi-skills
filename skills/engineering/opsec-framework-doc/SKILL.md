@@ -13,7 +13,7 @@ compatibility: >-
   document-management helpers live in scripts/document-manager.ts and are
   validated with Node 26+ type stripping.
 metadata:
-  source: "Ported from Dave's OpenCode opsec-framework-doc skill in ~/Desktop/opsec-framework-doc."
+  source: "Ported from Dave's OpenCode opsec-framework-doc skill."
 ---
 
 # OpSec Framework Documentation

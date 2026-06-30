@@ -1,3 +1,6 @@
+<!-- markdownlint-disable -->
+<!-- Fixture preserves source-note formatting for parser and merge tests. -->
+
 # Ditching Vanilla: Tool Signatures and OpSec
 
 **Classification:** Internal Use Only  
@@ -389,9 +392,9 @@ shred -vfz -n 3 /tmp/payload* 2>/dev/null
 ## References
 
 ### Internal
-- Tool notes: `/Users/dave/Documents/tradecraft_opsec_framework/writing/attack_tooling_opsec_considerations/attack_tooling_notes.txt`
-- Tmux OpSec: `/Users/dave/Documents/tradecraft_opsec_framework/writing/tmux-attack-host-logging-opsec.md`
-- Kerberoasting: `/Users/dave/Documents/tradecraft_opsec_framework/writing/kerberoasting-opsec-guide.md`
+- Internal source: attack tooling notes (not bundled)
+- Internal source: tmux attack-host logging OpSec notes (not bundled)
+- Internal source: Kerberoasting OpSec guide (not bundled)
 
 ### External
 - Michael Allen (BHIS) - "OPSEC Fundamentals for Remote Red Teams"
