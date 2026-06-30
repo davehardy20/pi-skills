@@ -944,7 +944,7 @@ export function flagConflictsInDocument(
 
 export function parseHistoryTable(content: string): HistoryEntry[] {
 	const section = content.match(
-		/(^|\n)##\s+Document\s+History\s*\n([\s\S]*?)(?=\n##\s+|\s*$)/i,
+		/(^|\n)##[ \t]+Document[ \t]+History[ \t]*\n([\s\S]*?)(?=\n##[ \t]+|\s*$)/i,
 	)?.[2];
 	if (!section) return [];
 
@@ -1012,7 +1012,9 @@ function updateLastUpdated(content: string, date: string): string {
 
 export function addHistoryEntry(content: string, entry: HistoryEntry): string {
 	const row = `| ${entry.version} | ${entry.date} | ${entry.author} | ${entry.changes} |`;
-	const historyHeading = content.match(/(^|\n)##\s+Document\s+History\s*\n/i);
+	const historyHeading = content.match(
+		/(^|\n)##[ \t]+Document[ \t]+History[ \t]*\n/i,
+	);
 	let updated: string;
 
 	if (!historyHeading) {
@@ -1020,19 +1022,26 @@ export function addHistoryEntry(content: string, entry: HistoryEntry): string {
 		return updateLastUpdated(updated, entry.date);
 	}
 
-	const tableSeparator = /\|[-\s|]+\|/g;
-	const afterHeading = historyHeading.index ?? 0;
-	tableSeparator.lastIndex = afterHeading;
-	const separator = tableSeparator.exec(content);
+	const sectionStart = (historyHeading.index ?? 0) + historyHeading[0].length;
+	const nextSectionOffset = content.slice(sectionStart).search(/\n##[ \t]+/);
+	const sectionEnd =
+		nextSectionOffset === -1
+			? content.length
+			: sectionStart + nextSectionOffset;
+	const historySection = content.slice(sectionStart, sectionEnd);
+	const separator = /^\|[| \t:-]+\|[ \t]*$/m.exec(historySection);
 
 	if (!separator) {
-		const insertAt = afterHeading + historyHeading[0].length;
-		updated = `${content.slice(0, insertAt)}\n| Version | Date | Author | Changes |\n|---------|------|--------|---------|\n${row}\n${content.slice(insertAt)}`;
+		const remainder = content.slice(sectionStart).replace(/^\n+/, "");
+		const suffix = remainder.length > 0 ? `\n${remainder}` : "";
+		updated = `${content.slice(0, sectionStart)}\n| Version | Date | Author | Changes |\n|---------|------|--------|---------|\n${row}\n${suffix}`;
 		return updateLastUpdated(updated, entry.date);
 	}
 
-	const lineEnd = content.indexOf("\n", separator.index);
-	const insertAt = lineEnd === -1 ? content.length : lineEnd + 1;
+	const separatorStart = sectionStart + separator.index;
+	const lineEnd = content.indexOf("\n", separatorStart);
+	const insertAt =
+		lineEnd === -1 || lineEnd > sectionEnd ? sectionEnd : lineEnd + 1;
 	updated = `${content.slice(0, insertAt)}${row}\n${content.slice(insertAt)}`;
 	return updateLastUpdated(updated, entry.date);
 }

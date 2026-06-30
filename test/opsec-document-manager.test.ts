@@ -402,6 +402,42 @@ test("parses and appends document history entries", () => {
 	assert.match(updatedAgain, /Second update/);
 });
 
+test("adds a new history table instead of using later table separators", () => {
+	const content = [
+		"# Guide",
+		"",
+		"**Last Updated:** 2026-06-01  ",
+		"",
+		"## Document History",
+		"",
+		"No history table yet.",
+		"",
+		"## References",
+		"",
+		"| Source | Notes |",
+		"|--------|-------|",
+		"| Internal | Keep this table untouched. |",
+		"",
+	].join("\n");
+
+	const updated = addHistoryEntry(content, {
+		version: "1.0",
+		date: "2026-06-30",
+		author: "Nyx",
+		changes: "Initial history row.",
+	});
+
+	assert.match(
+		updated,
+		/## Document History\n\n\| Version \| Date \| Author \| Changes \|/,
+	);
+	assert.match(
+		updated,
+		/\| 1\.0 \| 2026-06-30 \| Nyx \| Initial history row\. \|/,
+	);
+	assert.match(updated, /## References\n\n\| Source \| Notes \|/);
+});
+
 test("generates execution checklist from procedure inputs", () => {
 	const checklist = generateExecutionChecklist({
 		prerequisites: ["Lab approved", "OPLOG ready"],
