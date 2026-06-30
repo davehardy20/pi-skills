@@ -209,6 +209,67 @@ test("skips incoming top-level titles during merge", () => {
 	assert.equal(/^# Incoming Guide$/m.test(merged), false);
 });
 
+test("uses section hierarchy when merging repeated headings", () => {
+	const base = [
+		"# Guide",
+		"",
+		"## Windows",
+		"",
+		"### Procedure",
+		"Run Windows steps.",
+		"",
+		"## Linux",
+		"",
+		"### Procedure",
+		"Run Linux steps.",
+		"",
+	].join("\n");
+	const incoming = [
+		"# Guide",
+		"",
+		"## Linux",
+		"",
+		"### Procedure",
+		"Add Linux-only update.",
+		"",
+	].join("\n");
+	const merged = mergeDocuments(base, incoming, "linux notes");
+
+	assert.match(merged, /Run Windows steps\./);
+	assert.match(
+		merged,
+		/### Procedure\n\nRun Linux steps\.\n\n### Update from linux notes\n\nAdd Linux-only update\./,
+	);
+});
+
+test("flags ambiguous duplicate section paths for manual merge", () => {
+	const base = [
+		"# Guide",
+		"",
+		"## Windows",
+		"",
+		"### Procedure",
+		"First Windows procedure.",
+		"",
+		"### Procedure",
+		"Second Windows procedure.",
+		"",
+	].join("\n");
+	const incoming = [
+		"# Guide",
+		"",
+		"## Windows",
+		"",
+		"### Procedure",
+		"Incoming Windows procedure.",
+		"",
+	].join("\n");
+	const merged = mergeDocuments(base, incoming, "windows notes");
+
+	assert.match(merged, /OPSEC-DOC-CONFLICT/);
+	assert.match(merged, /Manual merge required/);
+});
+
 test("ignores markdown headings inside fenced code blocks", () => {
 	const codeBlock = [
 		"```bash",

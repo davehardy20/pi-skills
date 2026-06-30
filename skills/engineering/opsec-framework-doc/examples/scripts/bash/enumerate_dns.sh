@@ -80,7 +80,7 @@ check_dependencies() {
 # Function to validate domain
 validate_domain() {
     local domain="$1"
-    if [[ ! "$domain" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$ ]]; then
+    if [[ ! "$domain" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]; then
         echo -e "${RED}[!] Invalid domain format: $domain${NC}"
         exit 1
     fi

@@ -57,6 +57,7 @@ export interface Section {
 	level: number;
 	title: string;
 	normalizedTitle: string;
+	parentPath: string[];
 	body: string;
 }
 
@@ -613,18 +614,30 @@ export function parseMarkdownSections(content: string): ParsedDocument {
 
 	const preface = content.slice(0, headings[0]?.index ?? 0);
 	const sections: Section[] = [];
+	const hierarchy: Array<{ level: number; normalizedTitle: string }> = [];
 
 	for (let index = 0; index < headings.length; index += 1) {
 		const heading = headings[index];
 		const next = headings[index + 1];
 		const end = next?.index ?? content.length;
+		const normalizedTitle = normalizeHeading(heading.title);
+
+		while (hierarchy.length > 0) {
+			const parent = hierarchy[hierarchy.length - 1];
+			if (parent && parent.level < heading.level) break;
+			hierarchy.pop();
+		}
 
 		sections.push({
 			level: heading.level,
 			title: heading.title,
-			normalizedTitle: normalizeHeading(heading.title),
+			normalizedTitle,
+			parentPath: hierarchy
+				.filter((parent) => parent.level > 1)
+				.map((parent) => parent.normalizedTitle),
 			body: content.slice(heading.bodyStart, end).trim(),
 		});
+		hierarchy.push({ level: heading.level, normalizedTitle });
 	}
 
 	return { preface, sections };
@@ -645,6 +658,37 @@ function compactText(text: string): string {
 	return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+function sectionKey(section: Section): string {
+	return [section.level, ...section.parentPath, section.normalizedTitle].join(
+		"\0",
+	);
+}
+
+function groupSectionsByKey(sections: Section[]): Map<string, Section[]> {
+	const groups = new Map<string, Section[]>();
+	for (const section of sections) {
+		const key = sectionKey(section);
+		const existing = groups.get(key);
+		if (existing) existing.push(section);
+		else groups.set(key, [section]);
+	}
+	return groups;
+}
+
+function describeSectionPath(section: Section): string {
+	return [...section.parentPath, section.normalizedTitle].join(" > ");
+}
+
+function ambiguityConflict(section: Section, reason: string): Conflict {
+	return {
+		section: section.title,
+		severity: "medium",
+		reason,
+		existingSnippet: `Section path: ${describeSectionPath(section)}`,
+		incomingSnippet: snippet(section.body),
+	};
+}
+
 export function mergeDocuments(
 	baseContent: string,
 	incomingContent: string,
@@ -653,18 +697,48 @@ export function mergeDocuments(
 	const base = parseMarkdownSections(baseContent);
 	const incoming = parseMarkdownSections(incomingContent);
 	const baseHasTitle = base.sections.some((section) => section.level === 1);
-	const baseByHeading = new Map(
-		base.sections.map((section) => [section.normalizedTitle, section]),
-	);
+	const baseByKey = groupSectionsByKey(base.sections);
+	const incomingByKey = groupSectionsByKey(incoming.sections);
+	const manualConflicts: Conflict[] = [];
+	const reportedAmbiguities = new Set<string>();
 
 	for (const incomingSection of incoming.sections) {
 		if (incomingSection.level === 1 && baseHasTitle) continue;
 
-		const existing = baseByHeading.get(incomingSection.normalizedTitle);
+		const key = sectionKey(incomingSection);
+		const incomingMatches = incomingByKey.get(key) ?? [];
+		if (incomingMatches.length > 1) {
+			if (!reportedAmbiguities.has(key)) {
+				manualConflicts.push(
+					ambiguityConflict(
+						incomingSection,
+						`Manual merge required: incoming document has ${incomingMatches.length} sections with this heading path.`,
+					),
+				);
+				reportedAmbiguities.add(key);
+			}
+			continue;
+		}
+
+		const baseMatches = baseByKey.get(key) ?? [];
+		if (baseMatches.length > 1) {
+			if (!reportedAmbiguities.has(key)) {
+				manualConflicts.push(
+					ambiguityConflict(
+						incomingSection,
+						`Manual merge required: base document has ${baseMatches.length} sections with this heading path.`,
+					),
+				);
+				reportedAmbiguities.add(key);
+			}
+			continue;
+		}
+
+		const existing = baseMatches[0];
 
 		if (!existing) {
 			base.sections.push(incomingSection);
-			baseByHeading.set(incomingSection.normalizedTitle, incomingSection);
+			baseByKey.set(key, [incomingSection]);
 			continue;
 		}
 
@@ -684,7 +758,7 @@ export function mergeDocuments(
 		}
 	}
 
-	return sectionsToMarkdown(base);
+	return flagConflictsInDocument(sectionsToMarkdown(base), manualConflicts);
 }
 
 function snippet(text: string): string {
@@ -727,13 +801,31 @@ export function detectConflicts(
 ): Conflict[] {
 	const base = parseMarkdownSections(baseContent);
 	const incoming = parseMarkdownSections(incomingContent);
-	const baseByHeading = new Map(
-		base.sections.map((section) => [section.normalizedTitle, section]),
-	);
+	const baseByKey = groupSectionsByKey(base.sections);
+	const incomingByKey = groupSectionsByKey(incoming.sections);
 	const conflicts: Conflict[] = [];
+	const reportedAmbiguities = new Set<string>();
 
 	for (const incomingSection of incoming.sections) {
-		const existing = baseByHeading.get(incomingSection.normalizedTitle);
+		const key = sectionKey(incomingSection);
+		const baseMatches = baseByKey.get(key) ?? [];
+		if (baseMatches.length === 0) continue;
+
+		const incomingMatches = incomingByKey.get(key) ?? [];
+		if (incomingMatches.length > 1 || baseMatches.length > 1) {
+			if (!reportedAmbiguities.has(key)) {
+				conflicts.push(
+					ambiguityConflict(
+						incomingSection,
+						"Manual conflict review required: duplicate section paths are ambiguous.",
+					),
+				);
+				reportedAmbiguities.add(key);
+			}
+			continue;
+		}
+
+		const existing = baseMatches[0];
 		if (!existing) continue;
 
 		const reason = hasContradiction(existing.body, incomingSection.body);
