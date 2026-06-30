@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -54,6 +61,31 @@ test("discovers markdown recursively while excluding archive directories", async
 		);
 		assert.equal(docs[0]?.title, "DNS OpSec Guide");
 		assert.equal(docs[0]?.descriptionPreview, "DNS enumeration guidance.");
+	});
+});
+
+test("reports discovery failures instead of silently ignoring them", async () => {
+	await withTempDir(async (dir) => {
+		let rootFailed = false;
+		try {
+			await discoverDocuments(join(dir, "missing"));
+		} catch {
+			rootFailed = true;
+		}
+		assert.equal(rootFailed, true);
+
+		const locked = join(dir, "locked");
+		await mkdir(locked);
+		await chmod(locked, 0);
+		try {
+			const docs = await discoverDocuments(dir);
+			assert.equal(
+				docs.some((doc) => doc.filename === "locked" && doc.error),
+				true,
+			);
+		} finally {
+			await chmod(locked, 0o700);
+		}
 	});
 });
 
@@ -144,6 +176,16 @@ test("merges sections and flags contradictory guidance", () => {
 	assert.match(flagged, /## Conflict Review/);
 });
 
+test("skips incoming top-level titles during merge", () => {
+	const base = "# Existing Guide\n\n## Procedure\nBase procedure.\n";
+	const incoming = "# Incoming Guide\n\n## Notes\nIncoming notes.\n";
+	const merged = mergeDocuments(base, incoming, "incoming");
+
+	assert.match(merged, /^# Existing Guide$/m);
+	assert.match(merged, /^## Notes$/m);
+	assert.equal(/^# Incoming Guide$/m.test(merged), false);
+});
+
 test("ignores markdown headings inside fenced code blocks", () => {
 	const codeBlock = [
 		"```bash",
@@ -208,10 +250,20 @@ test("parses and appends document history entries", () => {
 		changes: "Merged source notes and archived original.",
 	});
 
+	const nextAgain = getNextVersion(parseHistoryTable(updated));
+	const updatedAgain = addHistoryEntry(updated, {
+		version: nextAgain,
+		date: "2026-07-01",
+		author: "Nyx",
+		changes: "Second update.",
+	});
+
 	assert.equal(next, "2.0");
-	assert.equal(parseHistoryTable(updated).length, 2);
-	assert.match(updated, /\*\*Last Updated:\*\* 2026-06-30/);
-	assert.match(updated, /Merged source notes/);
+	assert.equal(nextAgain, "2.1");
+	assert.equal(parseHistoryTable(updatedAgain).length, 3);
+	assert.match(updatedAgain, /\*\*Last Updated:\*\* 2026-07-01/);
+	assert.match(updatedAgain, /Merged source notes/);
+	assert.match(updatedAgain, /Second update/);
 });
 
 test("generates execution checklist from procedure inputs", () => {

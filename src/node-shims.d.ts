@@ -20,6 +20,7 @@ declare module "node:crypto" {
 
 declare module "node:fs/promises" {
 	export function access(path: string): Promise<void>;
+	export function chmod(path: string, mode: number): Promise<void>;
 	export function copyFile(source: string, destination: string): Promise<void>;
 	export function mkdir(
 		path: string,

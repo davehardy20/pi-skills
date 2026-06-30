@@ -415,6 +415,10 @@ export async function parseDocumentMetadata(
 	}
 }
 
+function formatError(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 export async function discoverDocuments(
 	targetDir: string,
 	options: DiscoverOptions = {},
@@ -427,17 +431,39 @@ export async function discoverDocuments(
 	const root = resolve(targetDir);
 	const documents: DocumentInfo[] = [];
 
-	const walk = async (directory: string): Promise<void> => {
+	const recordPathError = (path: string, message: string): void => {
+		documents.push({
+			filename: basename(path),
+			filepath: path,
+			sectionHeaders: [],
+			error: message,
+		});
+	};
+
+	const walk = async (directory: string, isRoot = false): Promise<void> => {
 		let entries: string[];
 		try {
 			entries = await readdir(directory);
-		} catch {
+		} catch (error) {
+			const message = `Failed to read directory: ${formatError(error)}`;
+			if (isRoot) {
+				throw new Error(
+					`Failed to read target directory ${directory}: ${formatError(error)}`,
+				);
+			}
+			recordPathError(directory, message);
 			return;
 		}
 
 		for (const entry of entries) {
 			const path = join(directory, entry);
-			const stats = await stat(path);
+			let stats: Awaited<ReturnType<typeof stat>>;
+			try {
+				stats = await stat(path);
+			} catch (error) {
+				recordPathError(path, `Failed to inspect path: ${formatError(error)}`);
+				continue;
+			}
 
 			if (stats.isDirectory()) {
 				if (recursive && !excluded.has(entry)) await walk(path);
@@ -450,7 +476,7 @@ export async function discoverDocuments(
 		}
 	};
 
-	await walk(root);
+	await walk(root, true);
 	return documents.sort((left, right) =>
 		relative(root, left.filepath).localeCompare(relative(root, right.filepath)),
 	);
@@ -609,11 +635,14 @@ export function mergeDocuments(
 ): string {
 	const base = parseMarkdownSections(baseContent);
 	const incoming = parseMarkdownSections(incomingContent);
+	const baseHasTitle = base.sections.some((section) => section.level === 1);
 	const baseByHeading = new Map(
 		base.sections.map((section) => [section.normalizedTitle, section]),
 	);
 
 	for (const incomingSection of incoming.sections) {
+		if (incomingSection.level === 1 && baseHasTitle) continue;
+
 		const existing = baseByHeading.get(incomingSection.normalizedTitle);
 
 		if (!existing) {
@@ -762,18 +791,34 @@ export function parseHistoryTable(content: string): HistoryEntry[] {
 	return entries;
 }
 
-export function getNextVersion(entries: HistoryEntry[], major = false): string {
-	if (entries.length === 0) return "1.0";
-
-	const latest = entries[entries.length - 1]?.version ?? "1.0";
-	const [majorPart, minorPart] = latest
+function parseVersion(
+	version: string,
+): { major: number; minor: number } | null {
+	const [majorPart, minorPart] = version
 		.split(".")
 		.map((part) => Number.parseInt(part, 10));
-	const safeMajor = Number.isFinite(majorPart) ? majorPart : 1;
-	const safeMinor = Number.isFinite(minorPart) ? minorPart : 0;
+	if (!Number.isFinite(majorPart) || !Number.isFinite(minorPart)) return null;
+	return { major: majorPart, minor: minorPart };
+}
 
-	if (major || safeMinor >= 9) return `${safeMajor + 1}.0`;
-	return `${safeMajor}.${safeMinor + 1}`;
+export function getNextVersion(entries: HistoryEntry[], major = false): string {
+	const latest = entries.reduce<{ major: number; minor: number } | null>(
+		(current, entry) => {
+			const parsed = parseVersion(entry.version);
+			if (!parsed) return current;
+			if (!current) return parsed;
+			if (parsed.major > current.major) return parsed;
+			if (parsed.major === current.major && parsed.minor > current.minor) {
+				return parsed;
+			}
+			return current;
+		},
+		null,
+	);
+
+	if (!latest) return "1.0";
+	if (major || latest.minor >= 9) return `${latest.major + 1}.0`;
+	return `${latest.major}.${latest.minor + 1}`;
 }
 
 function updateLastUpdated(content: string, date: string): string {
