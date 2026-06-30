@@ -5,6 +5,7 @@ import {
 	mkdtemp,
 	readFile,
 	rm,
+	symlink,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -86,6 +87,22 @@ test("reports discovery failures instead of silently ignoring them", async () =>
 		} finally {
 			await chmod(locked, 0o700);
 		}
+	});
+});
+
+test("skips symlinked directories during recursive discovery", async () => {
+	await withTempDir(async (dir) => {
+		await mkdir(join(dir, "nested"));
+		await writeFile(join(dir, "guide.md"), "# Guide\n", "utf8");
+		await writeFile(join(dir, "nested", "nested.md"), "# Nested\n", "utf8");
+		await symlink(dir, join(dir, "nested", "loop"));
+
+		const docs = await discoverDocuments(dir);
+
+		assert.deepEqual(
+			docs.map((doc) => doc.filename),
+			["guide.md", "nested.md"],
+		);
 	});
 });
 

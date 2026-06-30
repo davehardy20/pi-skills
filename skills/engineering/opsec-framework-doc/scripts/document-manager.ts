@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import {
 	access,
 	copyFile,
+	lstat,
 	mkdir,
 	readdir,
 	readFile,
-	stat,
 	writeFile,
 } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
@@ -457,13 +457,15 @@ export async function discoverDocuments(
 
 		for (const entry of entries) {
 			const path = join(directory, entry);
-			let stats: Awaited<ReturnType<typeof stat>>;
+			let stats: Awaited<ReturnType<typeof lstat>>;
 			try {
-				stats = await stat(path);
+				stats = await lstat(path);
 			} catch (error) {
 				recordPathError(path, `Failed to inspect path: ${formatError(error)}`);
 				continue;
 			}
+
+			if (stats.isSymbolicLink()) continue;
 
 			if (stats.isDirectory()) {
 				if (recursive && !excluded.has(entry)) await walk(path);

@@ -22,6 +22,11 @@ declare module "node:fs/promises" {
 	export function access(path: string): Promise<void>;
 	export function chmod(path: string, mode: number): Promise<void>;
 	export function copyFile(source: string, destination: string): Promise<void>;
+	export function lstat(path: string): Promise<{
+		isDirectory(): boolean;
+		isFile(): boolean;
+		isSymbolicLink(): boolean;
+	}>;
 	export function mkdir(
 		path: string,
 		options?: { recursive?: boolean },
@@ -36,9 +41,7 @@ declare module "node:fs/promises" {
 		path: string,
 		options?: { recursive?: boolean; force?: boolean },
 	): Promise<void>;
-	export function stat(
-		path: string,
-	): Promise<{ isDirectory(): boolean; isFile(): boolean }>;
+	export function symlink(target: string, path: string): Promise<void>;
 	export function writeFile(
 		path: string,
 		data: string,
