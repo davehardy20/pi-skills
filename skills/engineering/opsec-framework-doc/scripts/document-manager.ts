@@ -640,7 +640,7 @@ export function parseMarkdownSections(content: string): ParsedDocument {
 			parentPath: hierarchy
 				.filter((parent) => parent.level > 1)
 				.map((parent) => parent.normalizedTitle),
-			body: content.slice(heading.bodyStart, end).trim(),
+			body: trimSectionBody(content.slice(heading.bodyStart, end)),
 		});
 		hierarchy.push({ level: heading.level, normalizedTitle });
 	}
@@ -648,11 +648,15 @@ export function parseMarkdownSections(content: string): ParsedDocument {
 	return { preface, sections };
 }
 
+function trimSectionBody(body: string): string {
+	return body.replace(/^(?:[^\S\n]*\n)+/, "").replace(/\s+$/, "");
+}
+
 export function sectionsToMarkdown(parsed: ParsedDocument): string {
 	const renderedSections = parsed.sections.map((section) => {
 		const heading = `${"#".repeat(section.level)} ${section.title}`;
 		return section.body
-			? `${heading}\n\n${section.body.trim()}\n`
+			? `${heading}\n\n${trimSectionBody(section.body)}\n`
 			: `${heading}\n`;
 	});
 

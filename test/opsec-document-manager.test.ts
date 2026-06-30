@@ -75,6 +75,12 @@ test("reports discovery failures instead of silently ignoring them", async () =>
 		}
 		assert.equal(rootFailed, true);
 
+		// chmod(0) cannot make a directory unreadable for uid 0 (containers),
+		// so skip that leg when running as root to avoid a false failure.
+		const isRoot =
+			typeof process.getuid === "function" && process.getuid() === 0;
+		if (isRoot) return;
+
 		const locked = join(dir, "locked");
 		await mkdir(locked);
 		await chmod(locked, 0);
@@ -352,6 +358,31 @@ test("ignores markdown headings inside fenced code blocks", () => {
 		),
 		false,
 	);
+});
+
+test("preserves leading indented code blocks during merge", () => {
+	const base = [
+		"# Guide",
+		"",
+		"## Procedure",
+		"",
+		"    #!/bin/bash",
+		"    echo run",
+		"",
+	].join("\n");
+	const incoming = ["# Guide", "", "## Notes", "Added by merge.", ""].join(
+		"\n",
+	);
+
+	const parsed = parseMarkdownSections(base);
+	const merged = mergeDocuments(base, incoming, "notes");
+
+	assert.equal(
+		parsed.sections.find((section) => section.title === "Procedure")?.body,
+		["    #!/bin/bash", "    echo run"].join("\n"),
+	);
+	assert.match(merged, / {4}#!\/bin\/bash\n {4}echo run/);
+	assert.match(merged, /## Notes/);
 });
 
 test("does not flag identical negated guidance as a conflict", () => {

@@ -71,3 +71,7 @@ declare module "node:test" {
 
 	export default function test(name: string, callback: TestCallback): void;
 }
+
+declare const process: {
+	getuid?: () => number;
+};
