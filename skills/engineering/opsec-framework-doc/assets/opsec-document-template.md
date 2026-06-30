@@ -113,7 +113,7 @@ Use this checklist to ensure all procedure steps and OpSec countermeasures have 
 
 ### Script References
 
-- `scripts/{{SCRIPT_FILENAME}}` — {{SCRIPT_PURPOSE}}
+- `scripts/{{SCRIPT_LANGUAGE}}/{{SCRIPT_FILENAME}}` — {{SCRIPT_PURPOSE}}
   - Source section: {{SOURCE_SECTION}}
   - Validation: {{SCRIPT_VALIDATION_COMMAND}}
   - Execution notes: Authorized lab use only; document required operator approvals and target scope

@@ -30,7 +30,7 @@ TIMEOUT=2
 WORDLIST=""
 DOMAIN=""
 OUTPUT=""
-RESOLVERS=("8.8.8.8" "1.1.1.1" "9.9.9.9")
+RESOLVERS=()
 
 # Function to display usage
 usage() {
@@ -46,7 +46,7 @@ usage() {
     echo "  -t, --threads     Number of parallel threads (default: 10)"
     echo "  -o, --output      Output file for results"
     echo "  --timeout         DNS query timeout in seconds (default: 2)"
-    echo "  --resolver        Specific DNS resolver to use"
+    echo "  --resolver        Approved DNS resolver to use; may be repeated"
     echo "  -h, --help        Display this help message"
     echo ""
     echo "Examples:"
@@ -56,7 +56,7 @@ usage() {
     echo "OpSec Notes:"
     echo "  - High query rates may trigger rate limiting or alerts"
     echo "  - Consider using delays between batches"
-    echo "  - Use legitimate DNS servers to blend in"
+    echo "  - Default uses the system resolver; pass only approved DNS resolvers"
 }
 
 # Function to check dependencies
@@ -86,6 +86,12 @@ validate_domain() {
     fi
 }
 
+# Function to validate wordlist labels before composing FQDNs
+validate_subdomain() {
+    local subdomain="$1"
+    [[ "$subdomain" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]
+}
+
 # Function to test single subdomain
 test_subdomain() {
     local subdomain="$1"
@@ -93,22 +99,31 @@ test_subdomain() {
     local resolver="$3"
     local timeout="$4"
     local full_domain="${subdomain}.${domain}"
+    local lookup_output=""
 
-    # Try DNS resolution
-    if host -W "$timeout" "$full_domain" "$resolver" > /dev/null 2>&1; then
-        # Get IP address
-        local ip
-        ip=$(host -W "$timeout" "$full_domain" "$resolver" 2>/dev/null | awk '/has address/ {print $4}' | head -1)
+    # Try DNS resolution using the system resolver unless an approved resolver is supplied
+    if [ -n "$resolver" ]; then
+        lookup_output=$(host -W "$timeout" "$full_domain" "$resolver" 2>/dev/null) || return 0
+    else
+        lookup_output=$(host -W "$timeout" "$full_domain" 2>/dev/null) || return 0
+    fi
 
-        if [ -n "$ip" ]; then
-            echo -e "${GREEN}[FOUND]${NC} $full_domain - $ip"
-            echo "$full_domain,$ip" >> "$TMPFILE"
-        fi
+    local ip
+    ip=$(printf '%s\n' "$lookup_output" | awk '/has address/ {print $4}' | head -1)
+
+    if [ -n "$ip" ]; then
+        echo -e "${GREEN}[FOUND]${NC} $full_domain - $ip"
+        echo "$full_domain,$ip" >> "$TMPFILE"
     fi
 }
 
 # Function to rotate resolver
 get_resolver() {
+    if [ ${#RESOLVERS[@]} -eq 0 ]; then
+        echo ""
+        return
+    fi
+
     local index=$((RANDOM % ${#RESOLVERS[@]}))
     echo "${RESOLVERS[$index]}"
 }
@@ -137,7 +152,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --resolver)
-            RESOLVERS=("$2")
+            RESOLVERS+=("$2")
             shift 2
             ;;
         -h|--help)
@@ -201,7 +216,11 @@ echo "[*] Target Domain: $DOMAIN"
 echo "[*] Wordlist: $WORDLIST"
 echo "[*] Threads: $THREADS"
 echo "[*] Timeout: ${TIMEOUT}s"
-echo "[*] Resolvers: ${RESOLVERS[*]}"
+if [ ${#RESOLVERS[@]} -eq 0 ]; then
+    echo "[*] Resolvers: system default"
+else
+    echo "[*] Resolvers: ${RESOLVERS[*]}"
+fi
 echo ""
 
 # Count total subdomains to test
@@ -221,9 +240,15 @@ while IFS= read -r subdomain; do
     # Skip empty lines and comments
     [[ -z "$subdomain" || "$subdomain" =~ ^# ]] && continue
     
+    full_domain="${subdomain}.${DOMAIN}"
+    if ! validate_subdomain "$subdomain" || [ ${#full_domain} -gt 253 ]; then
+        echo -e "${YELLOW}[!] Skipping invalid subdomain label: $subdomain${NC}"
+        continue
+    fi
+
     # Rotate resolver for each query
     RESOLVER=$(get_resolver)
-    
+
     # Add to background job queue
     test_subdomain "$subdomain" "$DOMAIN" "$RESOLVER" "$TIMEOUT" &
 

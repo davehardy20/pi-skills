@@ -80,7 +80,7 @@ $ErrorActionPreference = "SilentlyContinue"
 $ProgressPreference = "SilentlyContinue"
 
 function Get-SPNSecurityInfo {
-    param([string]$encryptionTypes)
+    param([object]$encryptionTypes)
     
     # Parse msDS-SupportedEncryptionTypes attribute
     # Values from MS-KILE specification
@@ -92,8 +92,25 @@ function Get-SPNSecurityInfo {
         16 = "AES256-CTS-HMAC-SHA1-96"
     }
     
+    if ($null -eq $encryptionTypes -or [string]::IsNullOrWhiteSpace([string]$encryptionTypes)) {
+        return @{
+            Supported = "Unknown/default"
+            RiskLevel = "Unknown"
+            Kerberoastable = $false
+            RequiresManualReview = $true
+        }
+    }
+    
     $supported = @()
-    $etypeValue = [int]$encryptionTypes
+    $etypeValue = 0
+    if (-not [int]::TryParse([string]$encryptionTypes, [ref]$etypeValue)) {
+        return @{
+            Supported = "Unknown/default"
+            RiskLevel = "Unknown"
+            Kerberoastable = $false
+            RequiresManualReview = $true
+        }
+    }
     
     foreach ($etype in $etypes.Keys | Sort-Object) {
         if ($etypeValue -band $etype) {
@@ -101,10 +118,15 @@ function Get-SPNSecurityInfo {
         }
     }
     
+    if ($supported.Count -eq 0) {
+        $supported += "Unknown/default"
+    }
+    
     # Check for weak encryption
     $hasRC4 = $supported -contains "RC4-HMAC"
     $hasDES = ($supported -contains "DES-CBC-CRC") -or ($supported -contains "DES-CBC-MD5")
     $hasAES = ($supported -contains "AES128-CTS-HMAC-SHA1-96") -or ($supported -contains "AES256-CTS-HMAC-SHA1-96")
+    $requiresManualReview = $supported -contains "Unknown/default"
     
     $risk = "Unknown"
     if ($hasDES -or $hasRC4) {
@@ -117,6 +139,7 @@ function Get-SPNSecurityInfo {
         Supported = $supported -join ", "
         RiskLevel = $risk
         Kerberoastable = $hasRC4 -or $hasDES
+        RequiresManualReview = $requiresManualReview
     }
 }
 
@@ -195,7 +218,10 @@ function Invoke-SPNEnumeration {
             
             $samAccountName = $props["samaccountname"][0]
             $spns = $props["serviceprincipalname"]
-            $encryptionTypes = $props["msds-supportedencryptiontypes"][0]
+            $encryptionTypes = $null
+            if ($props["msds-supportedencryptiontypes"] -and $props["msds-supportedencryptiontypes"].Count -gt 0) {
+                $encryptionTypes = $props["msds-supportedencryptiontypes"][0]
+            }
             $uac = $props["useraccountcontrol"][0]
             
             # Check account status
@@ -205,8 +231,8 @@ function Invoke-SPNEnumeration {
             # Get encryption info
             $encInfo = Get-SPNSecurityInfo -encryptionTypes $encryptionTypes
             
-            # Skip AES-only accounts unless IncludeAES specified
-            if (-not $IncludeAllEncryption -and -not $encInfo.Kerberoastable) {
+            # Skip AES-only accounts unless IncludeAES specified. Unknown/default metadata is retained for manual review.
+            if (-not $IncludeAllEncryption -and -not $encInfo.Kerberoastable -and -not $encInfo.RequiresManualReview) {
                 continue
             }
             
@@ -217,6 +243,7 @@ function Invoke-SPNEnumeration {
                     EncryptionTypes = $encInfo.Supported
                     RiskLevel = $encInfo.RiskLevel
                     Kerberoastable = $encInfo.Kerberoastable
+                    RequiresManualReview = $encInfo.RequiresManualReview
                     IsDisabled = $isDisabled
                     IsServiceAccount = $isServiceAccount
                     Domain = $TargetDomain
@@ -244,7 +271,7 @@ function Invoke-SPNEnumeration {
             foreach ($user in $adUsers) {
                 $encInfo = Get-SPNSecurityInfo -encryptionTypes $user."msDS-SupportedEncryptionTypes"
                 
-                if (-not $IncludeAllEncryption -and -not $encInfo.Kerberoastable) {
+                if (-not $IncludeAllEncryption -and -not $encInfo.Kerberoastable -and -not $encInfo.RequiresManualReview) {
                     continue
                 }
                 
@@ -255,6 +282,7 @@ function Invoke-SPNEnumeration {
                         EncryptionTypes = $encInfo.Supported
                         RiskLevel = $encInfo.RiskLevel
                         Kerberoastable = $encInfo.Kerberoastable
+                        RequiresManualReview = $encInfo.RequiresManualReview
                         IsDisabled = -not $user.Enabled
                         IsServiceAccount = ($user.userAccountControl -band 0x10000) -eq 0x10000
                         Domain = $TargetDomain

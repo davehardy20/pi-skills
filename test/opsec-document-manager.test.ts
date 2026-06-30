@@ -165,6 +165,24 @@ test("archives by copying originals and writing a manifest", async () => {
 	});
 });
 
+test("refuses to archive symlinked source files", async () => {
+	await withTempDir(async (dir) => {
+		const source = join(dir, "outside.md");
+		const linked = join(dir, "linked.md");
+		await writeFile(source, "# Outside\n", "utf8");
+		await symlink(source, linked);
+
+		let rejected = false;
+		try {
+			await archiveDocuments([linked], await ensureArchiveDir(dir));
+		} catch {
+			rejected = true;
+		}
+
+		assert.equal(rejected, true);
+	});
+});
+
 test("merges sections and flags contradictory guidance", () => {
 	const base = [
 		"# Guide",
@@ -194,6 +212,7 @@ test("merges sections and flags contradictory guidance", () => {
 	assert.equal(conflicts.length, 1);
 	assert.match(merged, /Update from new notes/);
 	assert.match(merged, /## Notes/);
+	assert.match(merged, /OPSEC-DOC-CONFLICT/);
 	assert.match(flagged, /OPSEC-DOC-CONFLICT/);
 	assert.ok(flagged.trimStart().startsWith("# Guide"));
 	assert.match(flagged, /## Conflict Review/);
@@ -240,6 +259,38 @@ test("uses section hierarchy when merging repeated headings", () => {
 		merged,
 		/### Procedure\n\nRun Linux steps\.\n\n### Update from linux notes\n\nAdd Linux-only update\./,
 	);
+});
+
+test("inserts missing child sections under the matching parent", () => {
+	const base = [
+		"# Guide",
+		"",
+		"## Windows",
+		"",
+		"### Procedure",
+		"Run Windows steps.",
+		"",
+		"## Linux",
+		"",
+		"### Procedure",
+		"Run Linux steps.",
+		"",
+	].join("\n");
+	const incoming = [
+		"# Guide",
+		"",
+		"## Windows",
+		"",
+		"### Cleanup",
+		"Remove Windows artifacts.",
+		"",
+	].join("\n");
+	const merged = mergeDocuments(base, incoming, "cleanup notes");
+
+	const cleanupIndex = merged.indexOf("### Cleanup");
+	const linuxIndex = merged.indexOf("## Linux");
+	assert.ok(cleanupIndex > merged.indexOf("## Windows"));
+	assert.ok(cleanupIndex < linuxIndex);
 });
 
 test("flags ambiguous duplicate section paths for manual merge", () => {

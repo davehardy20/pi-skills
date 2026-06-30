@@ -540,6 +540,11 @@ export async function archiveDocuments(
 	const archived: ArchivedFile[] = [];
 
 	for (const filepath of filepaths) {
+		const stats = await lstat(filepath);
+		if (stats.isSymbolicLink()) {
+			throw new Error(`Refusing to archive symbolic link: ${filepath}`);
+		}
+
 		const destination = await uniqueDestination(
 			join(archiveDir, `${timestamp}_${basename(filepath)}`),
 		);
@@ -689,6 +694,56 @@ function ambiguityConflict(section: Section, reason: string): Conflict {
 	};
 }
 
+function pathsMatch(left: string[], right: string[]): boolean {
+	return (
+		left.length === right.length &&
+		left.every((value, index) => value === right[index])
+	);
+}
+
+function insertionIndexForMissingSection(
+	sections: Section[],
+	incomingSection: Section,
+): { index: number; conflict?: Conflict } {
+	if (incomingSection.parentPath.length === 0)
+		return { index: sections.length };
+
+	const parentTitle =
+		incomingSection.parentPath[incomingSection.parentPath.length - 1];
+	const parentPath = incomingSection.parentPath.slice(0, -1);
+	const parents = sections
+		.map((section, index) => ({ section, index }))
+		.filter(
+			({ section }) =>
+				section.normalizedTitle === parentTitle &&
+				section.level < incomingSection.level &&
+				pathsMatch(section.parentPath, parentPath),
+		);
+
+	if (parents.length === 0) return { index: sections.length };
+	if (parents.length > 1) {
+		return {
+			index: sections.length,
+			conflict: ambiguityConflict(
+				incomingSection,
+				"Manual merge required: parent section path is ambiguous.",
+			),
+		};
+	}
+
+	const parent = parents[0];
+	if (!parent) return { index: sections.length };
+
+	let insertAt = parent.index + 1;
+	while (
+		insertAt < sections.length &&
+		(sections[insertAt]?.level ?? 0) > parent.section.level
+	) {
+		insertAt += 1;
+	}
+	return { index: insertAt };
+}
+
 export function mergeDocuments(
 	baseContent: string,
 	incomingContent: string,
@@ -737,7 +792,15 @@ export function mergeDocuments(
 		const existing = baseMatches[0];
 
 		if (!existing) {
-			base.sections.push(incomingSection);
+			const placement = insertionIndexForMissingSection(
+				base.sections,
+				incomingSection,
+			);
+			if (placement.conflict) {
+				manualConflicts.push(placement.conflict);
+				continue;
+			}
+			base.sections.splice(placement.index, 0, incomingSection);
 			baseByKey.set(key, [incomingSection]);
 			continue;
 		}
@@ -748,6 +811,16 @@ export function mergeDocuments(
 			incomingBody.length > 0 &&
 			!existingBody.includes(compactText(incomingBody))
 		) {
+			const reason = hasContradiction(existing.body, incomingBody);
+			if (reason) {
+				manualConflicts.push({
+					section: existing.title,
+					severity: "high",
+					reason,
+					existingSnippet: snippet(existing.body),
+					incomingSnippet: snippet(incomingBody),
+				});
+			}
 			existing.body = [
 				existing.body.trim(),
 				`### Update from ${sourceLabel}`,
