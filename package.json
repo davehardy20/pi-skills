@@ -2,7 +2,13 @@
 	"name": "pi-skills",
 	"version": "0.1.0",
 	"private": true,
+	"type": "module",
 	"description": "Dave's local Pi skills package.",
+	"scripts": {
+		"test": "node --test test/opsec-document-manager.test.ts",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"validate:skills": "node scripts/validate-skills.mjs"
+	},
 	"keywords": [
 		"pi-package",
 		"pi-skills",

@@ -1,0 +1,83 @@
+# Python Script Dependencies
+# For OpSec Framework Documentation scripts
+# Last Updated: 2026-02-15
+
+# =============================================================================
+# CORE DEPENDENCIES
+# =============================================================================
+# Most scripts use built-in Python libraries for portability and to minimize
+# external dependencies that could trigger security alerts.
+
+# Standard library modules (no installation required):
+# - ctypes: Windows API access (built-in)
+# - argparse: Command-line argument parsing (built-in)
+# - base64: Encoding/decoding operations (built-in)
+# - sys: System-specific parameters (built-in)
+# - os: Operating system interface (built-in)
+# - subprocess: Process spawning (built-in)
+# - socket: Network operations (built-in)
+# - struct: Binary data structures (built-in)
+
+# =============================================================================
+# OPTIONAL DEPENDENCIES
+# Uncomment only if specific features are needed
+# =============================================================================
+
+# For advanced network operations
+# requests>=2.28.0
+# scapy>=2.4.5
+# impacket>=0.10.0
+
+# For Windows-specific operations
+# pywin32>=304; platform_system=="Windows"
+# wmi>=1.5.1; platform_system=="Windows"
+
+# For cryptography operations
+# cryptography>=38.0.0
+# pycryptodome>=3.15.0
+
+# For LDAP/Active Directory enumeration
+# ldap3>=2.9.1
+# pyldap>=3.4.0; platform_system!="Windows"
+
+# For data parsing and manipulation
+# lxml>=4.9.0
+# beautifulsoup4>=4.11.0
+
+# =============================================================================
+# DEVELOPMENT/DEBUGGING DEPENDENCIES
+# Comment out for production use
+# =============================================================================
+
+# pytest>=7.0.0
+# black>=22.0.0
+# pylint>=2.15.0
+# mypy>=0.991
+
+# =============================================================================
+# INSTALLATION NOTES
+# =============================================================================
+# 
+# Basic installation (no external deps):
+#   pip install -r requirements.txt
+#
+# With optional dependencies:
+#   pip install -r requirements.txt --upgrade
+#
+# For Windows-specific scripts:
+#   pip install pywin32 wmi
+#
+# For Active Directory enumeration:
+#   pip install ldap3 impacket
+#
+# =============================================================================
+# SECURITY NOTES
+# =============================================================================
+#
+# - These scripts are for authorized security testing only
+# - Some dependencies may trigger security software alerts
+# - Always test in isolated environments
+# - Review all dependencies for supply chain security
+# - Pin versions for reproducible builds
+#
+# =============================================================================
