@@ -143,11 +143,10 @@ npm run typecheck
 ```
 
 `validate:skills` parses `package.json`, checks skill frontmatter names/descriptions, enforces
-unique skill names, and verifies local Markdown links. The TypeScript helper tests use Node's built-in
-test runner with Node 26+ type stripping.
+unique skill names, and verifies local Markdown links. The TypeScript helper tests use Vitest.
 
 Pi safe-runner equivalents:
 
+- `run_vitest test/opsec-document-manager.test.ts`;
 - `run_typecheck` with `tsconfig.json`;
-- `run_biome src test skills/engineering/opsec-framework-doc/scripts/document-manager.ts`;
-- `node --test test/opsec-document-manager.test.ts` when shell validation is acceptable.
+- `run_biome src test skills/engineering/opsec-framework-doc/scripts/document-manager.ts`.
