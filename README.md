@@ -41,7 +41,9 @@ preserves the stateful teaching workspace model and adapts it for Pi workflows.
 `writing-great-skills` is adapted from Matt Pocock's MIT-licensed
 `writing-great-skills` skill in
 [Skills For Real Engineers](https://github.com/mattpocock/skills). This package
-keeps the skill name and its disclosed glossary reference.
+keeps the skill name and its disclosed glossary reference. See
+`skills/productivity/writing-great-skills/ATTRIBUTION.md` for the bundled MIT
+notice.
 
 `humanizer` is based on
 [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing),
