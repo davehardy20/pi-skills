@@ -17,6 +17,8 @@ Local Pi skills package for Dave's workflow.
   tone, and voice.
 - `teach` — builds stateful learning workspaces with missions, trusted
   resources, short HTML lessons, references, and learning records.
+- `writing-great-skills` — explains the vocabulary and principles for writing
+  predictable, maintainable Pi skills.
 - `post-merge` — runs PR post-merge closeout for Pi/Seeds repos, including
   merge verification, local branch updates, Seeds follow-up handling, and
   cleanup reporting.
@@ -35,6 +37,11 @@ vendor or depend on the original skills.
 `teach` is adapted from Matt Pocock's MIT-licensed `teach` skill in
 [Skills For Real Engineers](https://github.com/mattpocock/skills). This package
 preserves the stateful teaching workspace model and adapts it for Pi workflows.
+
+`writing-great-skills` is adapted from Matt Pocock's MIT-licensed
+`writing-great-skills` skill in
+[Skills For Real Engineers](https://github.com/mattpocock/skills). This package
+keeps the skill name and its disclosed glossary reference.
 
 `humanizer` is based on
 [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing),
@@ -78,6 +85,10 @@ Invoke directly:
 
 ```text
 /skill:teach help me learn Rust for building internal CLIs
+```
+
+```text
+/skill:writing-great-skills help me review this skill's information hierarchy
 ```
 
 ```text
