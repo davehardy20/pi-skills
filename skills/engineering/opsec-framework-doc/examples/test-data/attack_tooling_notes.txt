@@ -1,0 +1,12 @@
+Lots of tools leak user agents for instance, such as curl, wget, and python requests library. To avoid detection, you can use a custom user agent string or a proxy server.
+
+Kali Linux shows the same user agent across all editions.
+Set it to something like Microsoft Edge or Google Chrome or whatever is most common.
+Some other examples include:
+NMAP - Nmap Scripting Engine (NSE)
+WPScan - WordPress Security Scanner WPScan v3.8.12
+
+Do research on the tooling to changes these if they exist.
+To Do find more examples and document them here.
+
+Lots more information in this youtube vid - https://www.youtube.com/watch?v=AHwfV3NFlno, read through the transcript for more details.

@@ -5,6 +5,12 @@ agent/
 # Local expertise store
 .mulch/
 
+# Node dependencies
+node_modules/
+
 # OS/editor noise
 .DS_Store
 .seeds/
+
+# Generated install locks for this local package
+package-lock.json

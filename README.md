@@ -19,6 +19,9 @@ Local Pi skills package for Dave's workflow.
   resources, short HTML lessons, references, and learning records.
 - `writing-great-skills` — explains the vocabulary and principles for writing
   predictable, maintainable Pi skills.
+- `opsec-framework-doc` — creates structured OpSec procedure documents from
+  notes, research, existing Markdown, and script-heavy procedures, with
+  archive/history safety and TypeScript document-management helpers.
 - `post-merge` — runs PR post-merge closeout for Pi/Seeds repos, including
   merge verification, local branch updates, Seeds follow-up handling, and
   cleanup reporting.
@@ -52,6 +55,11 @@ maintained by WikiProject AI Cleanup.
 `humanizer` and `thermo-nuclear-code-quality-review` were ported from Dave's
 local `~/.pi/agent/skills/` directory into this package so `pi install
 /Users/dave/tools/pi-skills` can manage them together.
+
+`opsec-framework-doc` was ported from Dave's OpenCode skill in
+`~/Desktop/opsec-framework-doc`. The Pi port preserves the template, sample
+script references, and workflow behavior while splitting long guidance into
+progressive-disclosure references.
 
 ## Install locally
 
@@ -101,36 +109,44 @@ Invoke directly:
 /skill:codex-pr-comment PR 120 has a Codex review comment; read it and implement if required
 ```
 
-Or ask naturally for a Seeds-backed architecture review. The skill is intended for repository work
-where an agent should:
+```text
+/skill:opsec-framework-doc create an OpSec guide from these engagement notes
+```
 
-1. inspect Seeds first,
-2. produce a temporary visual candidate report,
-3. use structured decision checkpoints only at durable branch points,
-4. create or update a candidate-specific Seeds epic and plan,
-5. implement only after the plan is approved,
-6. validate, review, and open a PR before treating the work as complete.
+Or ask naturally for skill-covered work. `seeds-architecture-review` is intended for repository work
+where an agent should inspect Seeds, produce candidate reports, use decision checkpoints, create a
+candidate-specific Seeds plan, and open a PR before treating implementation as complete.
 
 ## Expected target-repo mutations
 
-The skill is conservative about writes:
+The package skills are conservative about writes:
 
-- no implementation changes during exploration/reporting;
-- `CONTEXT.md` is glossary-only and updated only after a domain term is resolved;
-- ADRs are offered only for hard-to-reverse, surprising, real trade-offs;
-- Seeds issues/plans are the canonical execution state after a candidate is selected;
-- Mulch is recorded only after a validated successful outcome;
-- implementation work should happen on a feature branch with PR-first closeout when the repository supports it.
+- `seeds-architecture-review` does not edit implementation code during exploration/reporting;
+  `CONTEXT.md` is glossary-only, ADRs are offered only for durable trade-offs, Seeds becomes the
+  execution state after candidate selection, and PR-first closeout applies.
+- `opsec-framework-doc` may create or update Markdown documentation, copy originals into
+  timestamped `archive/` paths before merge/overwrite/amend operations, extract code blocks into
+  documented script files, and update Document History. It treats bundled sample scripts as
+  reference assets and defaults to syntax/static validation rather than execution.
+- Mulch is recorded only after a validated successful outcome.
+- Repository implementation work should happen on a feature branch with PR-first closeout when the
+  repository supports it.
 
 ## Validation
 
 This package has no runtime dependencies. Basic local checks:
 
 ```bash
-node -e 'JSON.parse(require("fs").readFileSync("package.json", "utf8")); console.log("package.json ok")'
-find skills -name SKILL.md -print
+npm run validate:skills
+npm test
+npm run typecheck
 ```
 
-The tiny `src/` and `test/` TypeScript files are smoke inputs for generic Pi
-safe runners, so `run_typecheck` and `run_biome src test` can validate this
-mostly Markdown package without needing runtime dependencies.
+`validate:skills` parses `package.json`, checks skill frontmatter names/descriptions, enforces
+unique skill names, and verifies local Markdown links. The TypeScript helper tests use Vitest.
+
+Pi safe-runner equivalents:
+
+- `run_vitest test/opsec-document-manager.test.ts`;
+- `run_typecheck` with `tsconfig.json`;
+- `run_biome src test skills/engineering/opsec-framework-doc/scripts/document-manager.ts`.
