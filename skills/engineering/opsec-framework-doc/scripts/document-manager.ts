@@ -575,18 +575,33 @@ export async function generateArchiveManifest(
 		"---------------",
 	];
 
+	const targetRoot = dirname(resolve(archiveDir));
+	const manifestPathFor = (path: string): string => {
+		const absolute = resolve(path);
+		const relativePath = relative(targetRoot, absolute);
+		if (
+			relativePath &&
+			!relativePath.startsWith("..") &&
+			relativePath !== "."
+		) {
+			return relativePath;
+		}
+		return absolute;
+	};
+
 	for (const [index, file] of archivedFiles.entries()) {
-		const checksum = file.checksum ? ` [sha256: ${file.checksum}]` : "";
 		lines.push(
-			`${index + 1}. ${basename(file.archivedPath)} (original: ${basename(file.originalPath)})${checksum}`,
+			`${index + 1}. originalPath: ${manifestPathFor(file.originalPath)}`,
 		);
+		lines.push(`   archivedPath: ${manifestPathFor(file.archivedPath)}`);
+		if (file.checksum) lines.push(`   checksumSha256: ${file.checksum}`);
 	}
 
 	lines.push(
 		"",
 		"Merge Operation:",
 		"----------------",
-		`- Merged into: ${basename(mergedDoc)}`,
+		`- mergedDocumentPath: ${manifestPathFor(mergedDoc)}`,
 	);
 	await writeFile(manifestPath, `${lines.join("\n")}\n`, "utf8");
 	return manifestPath;
@@ -819,7 +834,7 @@ export function getNextVersion(entries: HistoryEntry[], major = false): string {
 	);
 
 	if (!latest) return "1.0";
-	if (major || latest.minor >= 9) return `${latest.major + 1}.0`;
+	if (major) return `${latest.major + 1}.0`;
 	return `${latest.major}.${latest.minor + 1}`;
 }
 

@@ -154,8 +154,14 @@ test("archives by copying originals and writing a manifest", async () => {
 			archived[0]?.archivedPath ?? "",
 			/2026-06-30_18-00_guide\.md$/,
 		);
+		const manifestContent = await readFile(manifest, "utf8");
 		assert.ok(archived[0]?.checksum);
-		assert.match(await readFile(manifest, "utf8"), /guide\.md/);
+		assert.match(manifestContent, /originalPath: guide\.md/);
+		assert.match(
+			manifestContent,
+			/archivedPath: archive\/2026-06-30_18-00_guide\.md/,
+		);
+		assert.match(manifestContent, /mergedDocumentPath: guide\.md/);
 	});
 });
 
@@ -275,8 +281,9 @@ test("parses and appends document history entries", () => {
 		changes: "Second update.",
 	});
 
-	assert.equal(next, "2.0");
-	assert.equal(nextAgain, "2.1");
+	assert.equal(next, "1.10");
+	assert.equal(nextAgain, "1.11");
+	assert.equal(getNextVersion(parseHistoryTable(updatedAgain), true), "2.0");
 	assert.equal(parseHistoryTable(updatedAgain).length, 3);
 	assert.match(updatedAgain, /\*\*Last Updated:\*\* 2026-07-01/);
 	assert.match(updatedAgain, /Merged source notes/);
