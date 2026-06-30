@@ -61,18 +61,18 @@ usage() {
 
 # Function to check dependencies
 check_dependencies() {
-    local deps=("dig" "host" "parallel")
+    local deps=("host")
     local missing=()
-    
+
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             missing+=("$dep")
         fi
     done
-    
+
     if [ ${#missing[@]} -ne 0 ]; then
         echo -e "${RED}[!] Missing dependencies: ${missing[*]}${NC}"
-        echo "[*] Install with: sudo apt-get install dnsutils parallel"
+        echo "[*] Install with: sudo apt-get install dnsutils"
         exit 1
     fi
 }
@@ -91,14 +91,15 @@ test_subdomain() {
     local subdomain="$1"
     local domain="$2"
     local resolver="$3"
+    local timeout="$4"
     local full_domain="${subdomain}.${domain}"
-    
+
     # Try DNS resolution
-    if host -W 2 "$full_domain" "$resolver" > /dev/null 2>&1; then
+    if host -W "$timeout" "$full_domain" "$resolver" > /dev/null 2>&1; then
         # Get IP address
         local ip
-        ip=$(host -W 2 "$full_domain" "$resolver" 2>/dev/null | awk '/has address/ {print $4}' | head -1)
-        
+        ip=$(host -W "$timeout" "$full_domain" "$resolver" 2>/dev/null | awk '/has address/ {print $4}' | head -1)
+
         if [ -n "$ip" ]; then
             echo -e "${GREEN}[FOUND]${NC} $full_domain - $ip"
             echo "$full_domain,$ip" >> "$TMPFILE"
@@ -163,6 +164,16 @@ if [ ! -f "$WORDLIST" ]; then
     exit 1
 fi
 
+if [[ ! "$THREADS" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "${RED}[!] Threads must be a positive integer: $THREADS${NC}"
+    exit 1
+fi
+
+if [[ ! "$TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "${RED}[!] Timeout must be a positive integer: $TIMEOUT${NC}"
+    exit 1
+fi
+
 # Check dependencies
 check_dependencies
 validate_domain "$DOMAIN"
@@ -184,7 +195,7 @@ fi
 
 # Create temporary file for results
 TMPFILE=$(mktemp)
-trap "rm -f $TMPFILE" EXIT
+trap 'rm -f "$TMPFILE"' EXIT
 
 echo "[*] Target Domain: $DOMAIN"
 echo "[*] Wordlist: $WORDLIST"
@@ -199,11 +210,7 @@ echo "[*] Total subdomains to test: $TOTAL"
 echo "[*] Starting enumeration..."
 echo ""
 
-# Export function for parallel execution
-export -f test_subdomain
-export DOMAIN
-export TMPFILE
-export RED GREEN NC
+# Background jobs use the shell function and inherited variables.
 
 # OpSec: Add delay between batches to avoid rate limiting
 BATCH_SIZE=100
@@ -217,10 +224,10 @@ while IFS= read -r subdomain; do
     # Rotate resolver for each query
     RESOLVER=$(get_resolver)
     
-    # Add to parallel job queue
-    test_subdomain "$subdomain" "$DOMAIN" "$RESOLVER" &
-    
-    ((counter++))
+    # Add to background job queue
+    test_subdomain "$subdomain" "$DOMAIN" "$RESOLVER" "$TIMEOUT" &
+
+    ((counter += 1))
     
     # Control parallelism
     if ((counter % THREADS == 0)); then
@@ -249,8 +256,12 @@ if [ -s "$TMPFILE" ]; then
     echo ""
     echo "Results:"
     echo "--------"
-    column -t -s',' "$TMPFILE"
-    
+    if command -v column > /dev/null 2>&1; then
+        column -t -s',' "$TMPFILE"
+    else
+        cat "$TMPFILE"
+    fi
+
     # Save to output file if specified
     if [ -n "$OUTPUT" ]; then
         cp "$TMPFILE" "$OUTPUT"

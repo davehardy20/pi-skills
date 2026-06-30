@@ -24,10 +24,12 @@
   - [Internal Sources](#internal-sources)
   - [External Sources](#external-sources)
   - [Tools Used](#tools-used)
+  - [Script References](#script-references)
 - [Document History](#document-history)
 - [Notes](#notes)
 
 ---
+
 ## Description
 
 {{DESCRIPTION}}
@@ -66,6 +68,7 @@
 Use this checklist to ensure all procedure steps and OpSec countermeasures have been completed.
 
 ### Pre-Execution Verification
+
 - [ ] **Prerequisites confirmed**: {{PREREQ_1}}
 - [ ] **Prerequisites confirmed**: {{PREREQ_2}}
 - [ ] **Prerequisites confirmed**: {{PREREQ_3}}
@@ -73,12 +76,15 @@ Use this checklist to ensure all procedure steps and OpSec countermeasures have 
 - [ ] **OpSec posture assessed**: Detection vectors reviewed and mitigations planned
 
 ### During Execution
+
 {{CHECKLIST_PROCEDURE_STEPS}}
 
 ### OpSec Verification
+
 {{CHECKLIST_OPSEC_MEASURES}}
 
 ### Post-Execution Cleanup
+
 - [ ] **Artifacts cleaned**: All temporary files, scripts, and tools removed from target
 - [ ] **Logs reviewed**: Checked for detection indicators and suspicious activity
 - [ ] **Timeline documented**: Execution times and sequences recorded in OPLOG
@@ -91,16 +97,27 @@ Use this checklist to ensure all procedure steps and OpSec countermeasures have 
 ## References
 
 ### Internal Sources
+
 - {{INTERNAL_REFERENCE_1}}
 - {{INTERNAL_REFERENCE_2}}
 
 ### External Sources
+
 - {{EXTERNAL_REFERENCE_1}}
 - {{EXTERNAL_REFERENCE_2}}
 
 ### Tools Used
+
 - {{TOOL_1}}
 - {{TOOL_2}}
+
+### Script References
+
+- `scripts/{{SCRIPT_FILENAME}}` — {{SCRIPT_PURPOSE}}
+  - Source section: {{SOURCE_SECTION}}
+  - Validation: {{SCRIPT_VALIDATION_COMMAND}}
+  - Execution notes: Authorized lab use only; document required operator approvals and target scope
+    before use.
 
 ---
 

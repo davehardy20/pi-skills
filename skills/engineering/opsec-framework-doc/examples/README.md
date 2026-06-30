@@ -6,8 +6,9 @@ structure, script extraction, and sample data.
 ## Safety
 
 - Authorized internal security testing only.
-- Do not execute sample scripts unless Dave explicitly authorizes the lab and target.
+- Do not execute runnable sample scripts unless Dave explicitly authorizes the lab and target.
 - Use examples to shape documentation, not as default operational tooling.
+- `apc_injection.py` is intentionally documentation-only and does not perform Windows API calls.
 
 ## Contents
 
@@ -25,7 +26,7 @@ examples/
 
 ## Original source notes
 
-- `apc_injection.py`: APC injection demonstration with MITRE T1055.004 mapping.
+- `apc_injection.py`: non-executing APC injection reference with MITRE T1055.004 mapping.
 - `Enumerate-SPN.ps1`: SPN enumeration reference with MITRE T1558.003 mapping.
 - `enumerate_dns.sh`: DNS enumeration reference with OpSec warnings.
 
