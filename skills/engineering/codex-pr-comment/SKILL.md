@@ -87,22 +87,57 @@ outcome.
    - If validation cannot run, report the exact reason and the command Dave should
      run.
 
-7. **Close out**
+7. **Publish fixes and clear fixed feedback**
+   - Push only when the current task or repository workflow authorizes publication.
+   - After a validated fix is present on the remote PR HEAD, clear its exact Codex
+     thread so GitHub no longer presents fixed feedback as unresolved:
+     - if the thread is already outdated, verify it is absent from the unresolved,
+       non-outdated thread view; no mutation is needed;
+     - otherwise mark the exact fixed thread resolved;
+     - never resolve a thread before its fix is pushed, or when its finding remains
+       unfixed, intentionally deferred, or disputed.
+   - Prefer a safe review-thread resolution tool when available. If the safe
+     wrappers only support reads, use GitHub's GraphQL mutation as the narrow
+     fallback:
+
+     ```bash
+     gh api graphql \
+       -f threadId='<PRRT_thread_id>' \
+       -f query='
+         mutation($threadId: ID!) {
+           resolveReviewThread(input: {threadId: $threadId}) {
+             thread { id isResolved }
+           }
+         }
+       '
+     ```
+
+   - Re-read unresolved, non-outdated threads after resolving. Every fixed Codex
+     item must now be either `resolved` or verified `outdated`; do not rely on the
+     code change alone to remove review ambiguity.
+   - If publication is not authorized, leave the thread unresolved and state that
+     resolution is waiting for the validated fix to reach the PR HEAD.
+
+8. **Close out**
    - Summarize:
      - PR URL and state;
      - Codex comments found;
      - classification for each comment;
      - files changed;
      - validation results;
+     - thread disposition for each fixed item (`resolved` or `outdated`);
      - unresolved or intentionally deferred comments.
-   - Do not resolve threads, post PR comments, merge, or push unless the current
-     task or repo workflow explicitly authorizes it.
+   - Do not post unrelated PR comments, merge, or push unless the current task or
+     repository workflow explicitly authorizes it.
 
 ## Safety rules
 
 - Prefer `gh_safe`, `git_safe`, and safe validation runners over shell commands.
 - Do not treat every automated comment as mandatory; apply judgement and explain
   when no code change is required.
+- Resolve only exact Codex threads whose validated fixes are present on the remote
+  PR HEAD. Leave unfixed, deferred, or disputed findings unresolved; verify
+  auto-outdated comments are absent from the current unresolved view.
 - Do not address unrelated reviewer comments unless Dave asked for all review
   feedback, not only Codex.
 - Never bypass branch protection, force-push, or rewrite PR history for a Codex
