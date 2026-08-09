@@ -13,6 +13,9 @@ Local Pi skills package for Dave's workflow.
   - candidate-specific Seeds plans;
   - validation, review, and PR-first closeout;
   - post-outcome Mulch only when justified.
+- `seeds-issue-audit` — audits open Seeds issues using verified completion
+  evidence, reports uncertainty by default, and requires explicit authorization
+  before closing high-confidence findings.
 - `humanizer` — removes common AI-writing patterns while preserving meaning,
   tone, and voice.
 - `teach` — builds stateful learning workspaces with missions, trusted
@@ -47,6 +50,11 @@ preserves the stateful teaching workspace model and adapts it for Pi workflows.
 keeps the skill name and its disclosed glossary reference. See
 `skills/productivity/writing-great-skills/ATTRIBUTION.md` for the bundled MIT
 notice.
+
+`seeds-issue-audit` is adapted from Jaymin West's MIT-licensed
+`seeds-issue-audit` skill. It replaces raw tracker/Git commands with Pi safe
+wrappers and preserves the upstream MIT notice in
+`skills/engineering/seeds-issue-audit/ATTRIBUTION.md`.
 
 `humanizer` is based on
 [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing),
