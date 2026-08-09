@@ -25,8 +25,10 @@ This repository packages local Pi skills.
 - Skill root: `skills/`
 - Skills:
   - `skills/engineering/codex-pr-comment/SKILL.md`
+  - `skills/engineering/opsec-framework-doc/SKILL.md`
   - `skills/engineering/post-merge/SKILL.md`
   - `skills/engineering/seeds-architecture-review/SKILL.md`
+  - `skills/engineering/seeds-issue-audit/SKILL.md`
   - `skills/engineering/thermo-nuclear-code-quality-review/SKILL.md`
   - `skills/productivity/teach/SKILL.md`
   - `skills/writing/humanizer/SKILL.md`
