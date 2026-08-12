@@ -52,3 +52,14 @@ test("reviews incremental child scope and worktree changes", async () => {
 	assert.match(skill, /staged, unstaged, and relevant\s+untracked files/);
 	assert.match(skill, /Do not silently\s+assume `main`/);
 });
+
+test("falls back to narrow read-only Git inspection", async () => {
+	const skill = await readSkill();
+
+	assert.match(skill, /If safe Git tools are unavailable/);
+	assert.match(
+		skill,
+		/read-only status, diff, ref resolution, merge-base, and commit-list inspection/,
+	);
+	assert.match(skill, /Never use raw Git to mutate state during review/);
+});

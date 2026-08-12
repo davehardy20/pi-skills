@@ -53,10 +53,11 @@ Verify the fixed point resolves and capture:
 
 A committed-only comparison is insufficient for a WIP review. The effective
 review set is the base-to-`HEAD` change plus staged, unstaged, and relevant
-untracked files. Use safe Git inspection tools where they express the required
-operation; use narrow read-only Git inspection only for unsupported operations
-such as resolving refs, finding a merge-base, or listing commits. Never mutate
-Git state during review.
+untracked files. Prefer safe Git inspection tools. If they are available but do
+not express a required read-only operation, use narrow raw Git inspection for
+that operation only. If safe Git tools are unavailable, use raw Git only for
+read-only status, diff, ref resolution, merge-base, and commit-list inspection.
+Never use raw Git to mutate state during review.
 
 Stop with a clear diagnostic if the ref is invalid. If the effective review set
 is empty, report that there is nothing to review.
