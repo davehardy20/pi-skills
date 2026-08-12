@@ -126,10 +126,15 @@ issues already enforced reliably by tooling.
 
 ## 4. Run isolated reviews in parallel
 
-Use `orchestrate` in parallel mode with one task per axis. Prompts must be
-self-contained and include the resolved range, changed/untracked files, commits,
-evidence paths or bounded evidence text, scope rule, and output contract below.
-Tell both reviewers they are strictly read-only.
+Launch two independent `orchestrate` calls concurrently, one per axis, with
+`mode: "single"` and `category: "pr-reviewer"` on **both** calls. Use the
+tool-call parallel wrapper to start them together; do not use orchestrator
+`mode: "parallel"` or a DAG for this review. The exact `pr-reviewer` category
+supplies both the approved review prompt and the read-only, sandbox-disabled,
+host execution policy. Do not use `oracle`, `deep`, `analyst`, or another
+sandbox-routed category for either axis. Prompts must be self-contained and
+include the resolved range, changed/untracked files, commits, evidence paths or
+bounded evidence text, scope rule, and output contract below.
 
 ### Standards reviewer
 
@@ -153,8 +158,10 @@ Ask it to:
 - avoid treating unrelated plan children as requirements of the active child.
 
 If Intent has no usable evidence, skip that sub-agent and record the reason.
-If parallel orchestration is unavailable, run isolated read-only passes
-sequentially and disclose the degraded execution mode.
+If `pr-reviewer` is unavailable, do not substitute a sandbox category. Stop and
+report that the approved host reviewer is unavailable. If the tool-call parallel
+wrapper is unavailable but `pr-reviewer` works, run the two independent
+`mode: "single"` calls sequentially and disclose the degraded execution mode.
 
 ## 5. Return findings to the parent context
 

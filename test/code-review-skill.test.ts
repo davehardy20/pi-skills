@@ -14,7 +14,29 @@ test("defines independent Standards and Seeds-backed Intent review axes", async 
 	assert.match(skill, /\*\*Standards\*\*/);
 	assert.match(skill, /\*\*Intent\*\*/);
 	assert.match(skill, /Run both axes as isolated, read-only sub-agents/);
-	assert.match(skill, /Use `orchestrate` in parallel mode/);
+	assert.match(
+		skill,
+		/Launch two independent `orchestrate` calls concurrently/,
+	);
+});
+
+test("routes both axes through approved host reviewers", async () => {
+	const skill = await readSkill();
+
+	assert.match(
+		skill,
+		/`mode: "single"` and `category: "pr-reviewer"` on \*\*both\*\* calls/,
+	);
+	assert.match(skill, /do not use orchestrator\s+`mode: "parallel"` or a DAG/);
+	assert.match(
+		skill,
+		/approved review prompt and the read-only, sandbox-disabled,\s+host/,
+	);
+	assert.match(
+		skill,
+		/Do not use `oracle`, `deep`, `analyst`, or another\s+sandbox-routed category/,
+	);
+	assert.match(skill, /If `pr-reviewer` is unavailable, do not substitute/);
 });
 
 test("keeps Seeds and reviewers read-only", async () => {
