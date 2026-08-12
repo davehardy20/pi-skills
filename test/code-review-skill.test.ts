@@ -30,7 +30,7 @@ test("routes both axes through approved host reviewers", async () => {
 	assert.match(skill, /do not use orchestrator\s+`mode: "parallel"` or a DAG/);
 	assert.match(
 		skill,
-		/approved review prompt and the read-only, sandbox-disabled, host/,
+		/approved review prompt and the read-only, sandbox-disabled,\s+host/,
 	);
 	assert.match(
 		skill,
