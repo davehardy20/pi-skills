@@ -130,8 +130,8 @@ Launch two independent `orchestrate` calls concurrently, one per axis, with
 `mode: "single"` and `category: "pr-reviewer"` on **both** calls. Use the
 tool-call parallel wrapper to start them together; do not use orchestrator
 `mode: "parallel"` or a DAG for this review. The exact `pr-reviewer` category
-supplies the approved review prompt and the read-only, sandbox-disabled, host
-execution policy. Do not use `oracle`, `deep`, `analyst`, or another
+supplies both the approved review prompt and the read-only, sandbox-disabled,
+host execution policy. Do not use `oracle`, `deep`, `analyst`, or another
 sandbox-routed category for either axis. Prompts must be self-contained and
 include the resolved range, changed/untracked files, commits, evidence paths or
 bounded evidence text, scope rule, and output contract below.
