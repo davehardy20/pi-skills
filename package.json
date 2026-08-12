@@ -5,7 +5,7 @@
 	"type": "module",
 	"description": "Dave's local Pi skills package.",
 	"scripts": {
-		"test": "vitest run test/opsec-document-manager.test.ts",
+		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"validate:skills": "node scripts/validate-skills.mjs"
 	},
@@ -21,6 +21,7 @@
 	},
 	"devDependencies": {
 		"typescript": "^5.9.0",
-		"vitest": "^4.1.9"
+		"vitest": "^4.1.9",
+		"yaml": "^2.9.0"
 	}
 }
