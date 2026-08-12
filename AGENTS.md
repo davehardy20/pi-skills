@@ -24,6 +24,7 @@ This repository packages local Pi skills.
 - Package manifest: `package.json`
 - Skill root: `skills/`
 - Skills:
+  - `skills/engineering/code-review/SKILL.md`
   - `skills/engineering/codex-pr-comment/SKILL.md`
   - `skills/engineering/opsec-framework-doc/SKILL.md`
   - `skills/engineering/post-merge/SKILL.md`

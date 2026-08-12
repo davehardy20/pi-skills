@@ -1,11 +1,20 @@
 declare module "node:assert/strict" {
 	const assert: {
 		equal(actual: unknown, expected: unknown, message?: string): void;
+		notEqual(actual: unknown, expected: unknown, message?: string): void;
 		deepEqual(actual: unknown, expected: unknown, message?: string): void;
 		ok(value: unknown, message?: string): void;
 		match(actual: string, expected: RegExp, message?: string): void;
 	};
 	export default assert;
+}
+
+declare module "node:child_process" {
+	export function spawnSync(
+		command: string,
+		args: string[],
+		options: { cwd: string; encoding: "utf8" },
+	): { status: number | null; stdout: string; stderr: string };
 }
 
 declare module "node:crypto" {
@@ -73,5 +82,6 @@ declare module "node:test" {
 }
 
 declare const process: {
+	execPath: string;
 	getuid?: () => number;
 };

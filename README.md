@@ -4,6 +4,9 @@ Local Pi skills package for Dave's workflow.
 
 ## Skills
 
+- `code-review` — reviews changes on independent Standards and Seeds-backed
+  Intent axes, then returns actionable findings directly to the parent agent
+  without writing review outcomes back to Seeds.
 - `codex-pr-comment` — reads Codex connector PR review comments,
   checks unresolved non-outdated review threads, implements required fixes, and
   reports validation.
@@ -50,6 +53,11 @@ preserves the stateful teaching workspace model and adapts it for Pi workflows.
 keeps the skill name and its disclosed glossary reference. See
 `skills/productivity/writing-great-skills/ATTRIBUTION.md` for the bundled MIT
 notice.
+
+`code-review` is adapted from Matt Pocock's MIT-licensed `code-review` skill
+in [Skills For Real Engineers](https://github.com/mattpocock/skills). It replaces
+the generic spec axis with read-only Seeds-backed Intent review and preserves
+the upstream MIT notice in `skills/engineering/code-review/ATTRIBUTION.md`.
 
 `seeds-issue-audit` is adapted from Jaymin West's MIT-licensed
 `seeds-issue-audit` skill. It replaces raw tracker/Git commands with Pi safe
@@ -102,6 +110,10 @@ Invoke directly:
 ```
 
 ```text
+/skill:code-review review this branch against its active Seeds issue
+```
+
+```text
 /skill:teach help me learn Rust for building internal CLIs
 ```
 
@@ -128,6 +140,9 @@ candidate-specific Seeds plan, and open a PR before treating implementation as c
 ## Expected target-repo mutations
 
 The package skills are conservative about writes:
+
+- `code-review` reads Seeds and repository evidence but never mutates them; its
+  findings return to the parent agent, which owns remediation and validation.
 
 - `seeds-architecture-review` does not edit implementation code during exploration/reporting;
   `CONTEXT.md` is glossary-only, ADRs are offered only for durable trade-offs, Seeds becomes the

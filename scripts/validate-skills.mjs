@@ -1,8 +1,15 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { parseDocument } from "yaml";
 
-JSON.parse(readFileSync("package.json", "utf8"));
+const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+const configuredSkillRoots = manifest.pi?.skills;
+if (!Array.isArray(configuredSkillRoots) || configuredSkillRoots.length === 0) {
+	throw new Error(
+		"package.json: pi.skills must contain at least one skill root",
+	);
+}
 
 const skillFiles = [];
 const markdownFiles = [];
@@ -19,19 +26,18 @@ function walk(directory) {
 	}
 }
 
-function frontmatterValue(frontmatter, key) {
-	const line = frontmatter
-		.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]
-		?.trim();
-	if (line && line !== ">-") return line.replace(/^['"]|['"]$/g, "");
-
-	const block = frontmatter.match(
-		new RegExp(`^${key}:\\s*>-\\s*\\n([\\s\\S]*?)(?:\\n[a-zA-Z-]+:|$)`, "m"),
-	)?.[1];
-	return block?.replace(/\n\s*/g, " ").trim();
+for (const configuredRoot of configuredSkillRoots) {
+	if (typeof configuredRoot !== "string") {
+		throw new Error("package.json: every pi.skills entry must be a string");
+	}
+	const root = resolve(configuredRoot);
+	if (!existsSync(root) || !statSync(root).isDirectory()) {
+		throw new Error(
+			`package.json: pi.skills entry '${configuredRoot}' is not a directory`,
+		);
+	}
+	walk(root);
 }
-
-walk("skills");
 
 const names = new Map();
 for (const file of skillFiles) {
@@ -39,13 +45,22 @@ for (const file of skillFiles) {
 	const frontmatter = text.match(/^---\n([\s\S]*?)\n---/)?.[1];
 	if (!frontmatter) throw new Error(`${file}: missing frontmatter`);
 
-	const name = frontmatterValue(frontmatter, "name");
-	const description = frontmatterValue(frontmatter, "description");
+	const document = parseDocument(frontmatter);
+	if (document.errors.length > 0) {
+		throw new Error(`${file}: invalid YAML frontmatter: ${document.errors[0]}`);
+	}
+	const metadata = document.toJS();
+	if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+		throw new Error(`${file}: frontmatter must be a YAML mapping`);
+	}
+	const { name, description } = metadata;
 
-	if (!name || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+	if (typeof name !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
 		throw new Error(`${file}: invalid skill name '${name ?? ""}'`);
 	}
-	if (!description) throw new Error(`${file}: missing description`);
+	if (typeof description !== "string" || !description.trim()) {
+		throw new Error(`${file}: missing description`);
+	}
 	if (names.has(name))
 		throw new Error(`duplicate skill name '${name}' in ${file}`);
 	names.set(name, file);
