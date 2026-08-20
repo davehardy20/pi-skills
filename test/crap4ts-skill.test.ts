@@ -915,3 +915,99 @@ test("called named function keeps its coverage credit", () => {
 	];
 	assert.equal(functionCoverage(fn, statements, fileFunctions), 1);
 });
+
+test("parseCoverageData preserves null fnMap columns (own-span matching)", () => {
+	// Real Istanbul fnMap data: null end column = "to end of line". A
+	// coerced 0 would defeat the line-only sentinel in
+	// stmtEndsWithinTolerance and break own-span matching for functions
+	// ending away from column 0 (Codex P1 round 2).
+	const data = {
+		"/abs/fn.ts": {
+			statementMap: {
+				"0": { start: { line: 1, column: 0 }, end: { line: 3, column: null } },
+				"1": { start: { line: 2, column: 1 }, end: { line: 2, column: null } },
+			},
+			s: { "0": 1, "1": 0 },
+			fnMap: {
+				"0": {
+					name: "unusedFn",
+					decl: { start: { line: 1, column: 0 }, end: { line: 1, column: 30 } },
+					loc: {
+						start: { line: 1, column: 0 },
+						end: { line: 3, column: null },
+					},
+					// no hit entry -> hits 0
+				},
+			},
+		},
+	};
+	const map = parseCoverageData(data);
+	const fn = map.get("/abs/fn.ts");
+	if (!fn) throw new Error("fn entry missing");
+	const span = fn.functions[0];
+	if (span.end.column !== null) {
+		throw new Error(`expected null preserved, got ${span.end.column}`);
+	}
+	// Statement 0 (declaration wrapper, hit via module load) is excluded;
+	// statement 1 (uncalled body statement) counts -> coverage 0.
+	const functions = analyzeSource(
+		ts,
+		"fn.ts",
+		"export function unusedFn(a: number) {\n\tif (a) return 1;\n\treturn 0;\n}",
+	);
+	const target = functions.find((f) => f.name === "unusedFn");
+	if (!target) throw new Error("unusedFn not found");
+	assert.equal(functionCoverage(target, fn.statements, fn.functions), 0);
+});
+
+test("changed mode applies directory exclusions", async () => {
+	// Tracked files under excluded dirs (dist/) must not be admitted by the
+	// changed-file filter, matching collectSourceFiles behavior (Codex P2).
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-changed-excl-`);
+	try {
+		const git = (...args: string[]) =>
+			execSync(`git ${args.join(" ")}`, { cwd: dir, encoding: "utf8" });
+		git("-c init.defaultBranch=main init");
+		git('config user.email "test@example.com"');
+		git('config user.name "Test"');
+		const { mkdir, writeFile } = await import("node:fs/promises");
+		await mkdir(join(dir, "dist"));
+		await writeFile(
+			join(dir, "package.json"),
+			JSON.stringify({ name: "f", private: true }),
+		);
+		await writeFile(
+			join(dir, "src.ts"),
+			"export function ok(a: number) {\n  return a > 1 ? 2 : a;\n}\n",
+		);
+		await writeFile(
+			join(dir, "dist", "gen.ts"),
+			"export function bad(x: number) {\n  return x;\n}\n",
+		);
+		git("add .");
+		git("commit -m base");
+		git("update-ref refs/remotes/origin/main HEAD");
+		// Change both src.ts (should be reported) and the tracked dist/gen.ts
+		// (must stay excluded).
+		await writeFile(
+			join(dir, "src.ts"),
+			"export function ok2(a: number) {\n  return a;\n}\n",
+		);
+		await writeFile(
+			join(dir, "dist", "gen.ts"),
+			"export function bad2(x: number) {\n  return x;\n}\n",
+		);
+		git("add .");
+		git("commit -m wip");
+		const result = runCli(dir, "--changed", "--no-coverage");
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /ok2\s+src\.ts/);
+		assert.ok(
+			!result.stdout.includes("bad2"),
+			"excluded dist/ file leaked into changed report",
+		);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});

@@ -244,14 +244,18 @@ export function parseCoverageData(data) {
 			.filter(([, range]) => range?.loc ?? range?.decl)
 			.map(([, range]) => {
 				const span = range.loc ?? range.decl;
+				// Preserve null columns: real Istanbul fnMap data uses null for
+				// "to end of line". Comparisons null-guard, and a coerced 0 here
+				// would defeat the end-of-line sentinel and break own-span
+				// matching for functions ending away from column 0.
 				return {
 					start: {
 						line: span.start.line,
-						column: span.start.column ?? 0,
+						column: span.start.column ?? null,
 					},
 					end: {
 						line: span.end.line,
-						column: span.end.column ?? 0,
+						column: span.end.column ?? null,
 					},
 				};
 			});
@@ -328,10 +332,15 @@ function sameEnd(g, fn) {
 function stmtEndsWithinTolerance(g, stmt) {
 	// Real Istanbul data: loc/statement end columns can be null (meaning
 	// "to end of line"), and TS end positions are exclusive while
-	// Istanbul's are inclusive, so ends may differ by one column. A null
-	// column matches on line equality alone.
+	// Istanbul's are inclusive, so ends may differ by one column or — when
+	// the null sentinel lands next to a trailing newline — by one line.
+	// A null column therefore matches within ±1 line, exact lines within
+	// ±1 column.
+	const lineDelta = Math.abs(g.end.line - stmt.end.line);
+	if (g.end.column == null || stmt.end.column == null) {
+		return lineDelta <= 1;
+	}
 	if (g.end.line !== stmt.end.line) return false;
-	if (g.end.column == null || stmt.end.column == null) return true;
 	const endCol = g.end.column - stmt.end.column;
 	return endCol >= -1 && endCol <= 1;
 }
@@ -566,6 +575,10 @@ function changedFiles(rootDir) {
 			(line) =>
 				line.length > 0 &&
 				SOURCE_EXTENSIONS.has(extname(line)) &&
+				// Apply the same directory exclusions as collectSourceFiles so
+				// generated code (dist/, build/) under excluded dirs cannot trip
+				// the changed-only report or --fail-over.
+				!line.split("/").some((seg) => EXCLUDED_DIRS.has(seg)) &&
 				!shouldExcludeFile(line.split("/").pop() ?? "") &&
 				existsSync(resolve(rootDir, line)),
 		);
