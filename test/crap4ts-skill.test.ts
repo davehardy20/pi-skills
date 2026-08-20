@@ -936,7 +936,7 @@ test("parseCoverageData preserves null fnMap columns (own-span matching)", () =>
 						start: { line: 1, column: 0 },
 						end: { line: 3, column: null },
 					},
-					// no hit entry -> hits 0
+					// no cov.f entry -> hits null
 				},
 			},
 		},
@@ -1124,4 +1124,33 @@ test("concise arrow uses fnMap hits when no attributable statements", () => {
 	assert.equal(functionCoverage(choose, statements, fileFunctions), 1);
 	assert.equal(functionCoverage(dead, statements, fileFunctions), 0);
 	assert.equal(functionCoverage(fresh, statements, fileFunctions), null);
+});
+
+test("parseCoverageData joins fnMap spans with cov.f hit counts", () => {
+	// Direct parse-side assertion for the cov.f -> hits join (pr_review NIT):
+	// present ids carry counts; absent ids -> null.
+	const data = {
+		"/abs/join.ts": {
+			statementMap: {
+				"0": { start: { line: 1, column: 0 }, end: { line: 1, column: 20 } },
+			},
+			s: { "0": 3 },
+			fnMap: {
+				"0": {
+					name: "calledFn",
+					loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 20 } },
+				},
+				"1": {
+					name: "silentFn",
+					loc: { start: { line: 2, column: 0 }, end: { line: 2, column: 20 } },
+				},
+			},
+			f: { "0": 4 }, // no entry for id 1
+		},
+	};
+	const map = parseCoverageData(data);
+	const entry = map.get("/abs/join.ts");
+	if (!entry) throw new Error("join entry missing");
+	assert.equal(entry.functions[0].hits, 4);
+	assert.equal(entry.functions[1].hits, null);
 });

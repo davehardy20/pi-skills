@@ -71,8 +71,6 @@ export function parseCoverageData(data: Record<string, unknown>): CoverageMap;
 /**
  * Fraction of statements fully contained in the function's own span that
  * were hit. Enclosing statements (marked hit by module load) and statements
- * Fraction of statements fully contained in the function's own span that
- * were hit. Enclosing statements (marked hit by module load) and statements
  * owned by nested functions are excluded. When no statements apply, falls
  * back to the function's own fnMap hit count (1/0); returns null only when
  * that is also unknown (reported as N/A).
