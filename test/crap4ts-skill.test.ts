@@ -756,3 +756,69 @@ test("functionCoverage excludes nested arrow using real-shaped fnMap loc/decl", 
 	];
 	assert.equal(functionCoverage(cb, cbStatements, fileFunctions), 0);
 });
+
+test("own-span detection tolerates cross-line modifier offsets", () => {
+	// `export` on its own line: TS span starts at line 1 col 0, the Istanbul
+	// loc starts at line 2. Same-line conjunct would misclassify own -> nested.
+	const source = [
+		"export",
+		"function split(a: number) {",
+		"  if (a > 1) return 2;",
+		"  return a;",
+		"}",
+	].join("\n");
+	const functions = analyzeSource(ts, "split.ts", source);
+	const split = functions.find((fn) => fn.name === "split");
+	if (!split) throw new Error("split not found");
+
+	const fileFunctions = [
+		{ start: { line: 2, column: 0 }, end: { line: 5, column: 1 } },
+	];
+	const statements = [
+		{ startLine: 3, endLine: 3, startColumn: 2, endColumn: 19, hits: 1 },
+		{ startLine: 4, endLine: 4, startColumn: 2, endColumn: 11, hits: 1 },
+	];
+	// Not N/A despite the two-line offset between TS start and loc start.
+	assert.equal(functionCoverage(split, statements, fileFunctions), 1);
+});
+
+test("own-span detection handles decorated methods", () => {
+	const source = [
+		"class Service {",
+		"  @logged",
+		"  run(a: number) {",
+		"    return a ? 1 : 0;",
+		"  }",
+		"}",
+	].join("\n");
+	const functions = analyzeSource(ts, "service.ts", source);
+	const run = functions.find((fn) => fn.name === "Service.run");
+	if (!run) throw new Error("Service.run not found");
+
+	// Decorator pushes the method's loc start beyond the TS span start
+	// (TS includes the decorator), end positions still match.
+	const fileFunctions = [
+		{ start: { line: 3, column: 2 }, end: { line: 5, column: 3 } },
+	];
+	const statements = [
+		{ startLine: 4, endLine: 4, startColumn: 4, endColumn: 20, hits: 2 },
+	];
+	assert.equal(functionCoverage(run, statements, fileFunctions), 1);
+});
+
+test("parseCoverageData skips fnMap entries lacking loc and decl", () => {
+	const map = parseCoverageData({
+		"/proj/src/core.ts": {
+			statementMap: { 0: { start: { line: 1 }, end: { line: 1 } } },
+			s: { 0: 1 },
+			fnMap: {
+				0: { name: "ok", decl: { start: { line: 1 }, end: { line: 1 } } },
+				1: { name: "broken" },
+				2: null,
+			},
+		},
+	});
+	const entry = map.get("/proj/src/core.ts");
+	assert.equal(entry?.functions.length, 1);
+	assert.equal(entry?.statements.length, 1);
+});

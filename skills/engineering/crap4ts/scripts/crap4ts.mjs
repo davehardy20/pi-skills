@@ -240,16 +240,21 @@ export function parseCoverageData(data) {
 		// loc = full span incl. body (used for nested-ownership containment);
 		// decl = header only. TS node.getStart() includes modifiers (export/
 		// async) so TS spans can start earlier than Istanbul's function node.
-		const functions = Object.values(cov.fnMap ?? {}).map((range) => ({
-			start: {
-				line: (range.loc ?? range.decl).start.line,
-				column: (range.loc ?? range.decl).start.column ?? 0,
-			},
-			end: {
-				line: (range.loc ?? range.decl).end.line,
-				column: (range.loc ?? range.decl).end.column ?? 0,
-			},
-		}));
+		const functions = Object.entries(cov.fnMap ?? {})
+			.filter(([, range]) => range?.loc ?? range?.decl)
+			.map(([, range]) => {
+				const span = range.loc ?? range.decl;
+				return {
+					start: {
+						line: span.start.line,
+						column: span.start.column ?? 0,
+					},
+					end: {
+						line: span.end.line,
+						column: span.end.column ?? 0,
+					},
+				};
+			});
 		map.set(resolve(file), { statements, functions });
 	}
 	return map;
@@ -304,11 +309,11 @@ export function functionCoverage(fn, statements, fileFunctions = []) {
 }
 
 function sameEnd(g, fn) {
-	return (
-		posCompare(g.end, fn.end) === 0 &&
-		posCompare(g.start, fn.start) >= 0 &&
-		g.start.line === fn.start.line
-	);
+	// End equality + a start no earlier than the TS span (which includes
+	// modifiers/decorators) identifies the function's own loc. The same-line
+	// conjunct is intentionally dropped: split `export` or decorators can
+	// push the loc onto a different line than the TS start.
+	return posCompare(g.end, fn.end) === 0 && posCompare(g.start, fn.start) >= 0;
 }
 
 // Istanbul fnMap spans use the instrumented function node, which starts
