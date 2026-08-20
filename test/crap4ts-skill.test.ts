@@ -1011,3 +1011,58 @@ test("changed mode applies directory exclusions", async () => {
 		await rm(dir, { recursive: true, force: true });
 	}
 });
+
+test("null end column has end-of-line semantics in containment", () => {
+	// Codex P1 round 3: a nested fnMap span ending in column:null must
+	// still contain its same-line statements (end-of-line, not column 0),
+	// so nested callback statements cannot leak into the parent.
+	const source = [
+		"export function parent(items: number[]) {",
+		"  return items.map((x) => {",
+		"    if (x > 1) return 2;",
+		"    return x;",
+		"  });",
+		"}",
+	].join("\n");
+	const functions = analyzeSource(ts, "parent.ts", source);
+	const parent = functions.find((f) => f.name === "parent");
+	if (!parent) throw new Error("parent not found");
+	// Real Istanbul shape: callback loc ends { line: 5, column: null } (the
+	// "});" line) while its body statements sit on lines 3-4 and the arrow
+	// expression statement on line 2 ends at a positive column.
+	const fileFunctions = [
+		{
+			// parent span
+			start: { line: 1, column: 0 },
+			end: { line: 6, column: 1 },
+		},
+		{
+			// nested callback span, null end column
+			start: { line: 2, column: 26 },
+			end: { line: 5, column: null },
+		},
+	];
+	const statements = [
+		// parent declaration wrapper (module-load hit) — excluded as wrapper
+		{ startLine: 1, endLine: 6, startColumn: 0, endColumn: 1, hits: 1 },
+		// callback-owned body statement (inside (2,26)-(5,null)); its null
+		// end must behave as end-of-line so this stays contained in the
+		// callback span and does NOT count for parent (would otherwise make
+		// an uncalled parent appear covered).
+		{
+			startLine: 3,
+			endLine: 3,
+			startColumn: 4,
+			endColumn: 20,
+			hits: 1,
+		},
+		// parent return statement wrapper — same span as the map call; the
+		// declaration-wrapper rule excludes the whole-function one only.
+	];
+	// The callback-owned statement must stay attributed to the nested
+	// span; the parent has no other own statements -> null (N/A).
+	const cov = functionCoverage(parent, statements, fileFunctions);
+	if (cov !== null) {
+		throw new Error(`expected null (no own statements), got ${cov}`);
+	}
+});

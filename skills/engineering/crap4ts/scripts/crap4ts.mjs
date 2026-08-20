@@ -269,15 +269,26 @@ function posCompare(a, b) {
 	return (a.column ?? 0) - (b.column ?? 0);
 }
 
+// End positions compare with end-of-line semantics: a null end column
+// (real Istanbul fnMap data) spans to the end of its line, so it must
+// contain any same-line position rather than compete as column 0.
+function endCompare(a, b) {
+	if (a.line !== b.line) return a.line - b.line;
+	if (a.column == null && b.column == null) return 0;
+	const aCol = a.column == null ? Number.POSITIVE_INFINITY : a.column;
+	const bCol = b.column == null ? Number.POSITIVE_INFINITY : b.column;
+	return aCol - bCol;
+}
+
 function rangeContains(outer, inner) {
 	return (
 		posCompare(outer.start, inner.start) <= 0 &&
-		posCompare(outer.end, inner.end) >= 0
+		endCompare(outer.end, inner.end) >= 0
 	);
 }
 
 function rangesEqual(a, b) {
-	return posCompare(a.start, b.start) === 0 && posCompare(a.end, b.end) === 0;
+	return posCompare(a.start, b.start) === 0 && endCompare(a.end, b.end) === 0;
 }
 
 // Only statements fully contained in the function's own span count. This
