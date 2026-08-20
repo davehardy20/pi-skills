@@ -2,6 +2,11 @@
 	"$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
 	"testRunner": "vitest",
 	"reporters": ["html", "clear-text", "progress"],
-	"mutate": ["skills/engineering/opsec-framework-doc/scripts/document-manager.ts"],
-	"coverageAnalysis": "perTest"
+	"mutate": [
+		"skills/engineering/opsec-framework-doc/scripts/document-manager.ts"
+	],
+	"coverageAnalysis": "perTest",
+	"thresholds": {
+		"break": 50
+	}
 }
