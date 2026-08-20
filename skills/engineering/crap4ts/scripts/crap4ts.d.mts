@@ -51,6 +51,9 @@ export interface FunctionSpan {
 	/** Columns may be null in real Istanbul fnMap data. */
 	start: { line: number; column: number | null };
 	end: { line: number; column: number | null };
+	/** Istanbul fnMap hit count (cov.f); null when absent. Hand-built
+	 * spans may omit it. */
+	hits?: number | null;
 }
 
 /** Absolute source path -> statements plus function declaration spans. */
@@ -68,8 +71,11 @@ export function parseCoverageData(data: Record<string, unknown>): CoverageMap;
 /**
  * Fraction of statements fully contained in the function's own span that
  * were hit. Enclosing statements (marked hit by module load) and statements
- * owned by nested functions are excluded. Returns null when nothing applies
- * (reported as N/A).
+ * Fraction of statements fully contained in the function's own span that
+ * were hit. Enclosing statements (marked hit by module load) and statements
+ * owned by nested functions are excluded. When no statements apply, falls
+ * back to the function's own fnMap hit count (1/0); returns null only when
+ * that is also unknown (reported as N/A).
  */
 export function functionCoverage(
 	fn: Pick<CrapFunction, "startLine" | "endLine" | "start" | "end">,

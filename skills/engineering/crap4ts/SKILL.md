@@ -106,8 +106,10 @@ change the code safely. When coverage is unknown, act as if it were absent.
    then unique path-suffix fallback like crap4go); coverage is the fraction
    of statements fully contained in the function's own span with hits > 0.
    Enclosing statements (e.g. a wrapper hit merely by module load) and
-   nested-function statements (via fnMap `loc` spans) are excluded; no
-   applicable statements report N/A.
+   nested-function statements (via fnMap `loc` spans) are excluded. When
+   no statements apply but the function's own fnMap entry has a hit count
+   (`cov.f` — concise-bodied arrows), coverage falls back to that hit
+   count (1 or 0), not N/A.
 6. Applies `CRAP = CC² × (1 − coverage)³ + CC`, sorts worst-first.
 
 ## Recommended Workflow
