@@ -1083,3 +1083,35 @@ test("bodyless declarations are skipped", () => {
 	assert.equal(rows.length, 1, JSON.stringify(rows.map((f) => f.startLine)));
 	assert.equal(rows[0].startLine, 3);
 });
+
+test("concise arrow uses fnMap hits when no attributable statements", () => {
+	// Codex P2: expression-bodied arrows' only statement is the excluded
+	// enclosing declaration, so execution data lives in cov.f. Called arrow
+	// -> 1, uncalled -> 0, absent hits -> null.
+	const source = [
+		"const choose = (x: boolean) => (x ? 1 : 2);",
+		"const dead = (x: boolean) => (x ? 3 : 4);",
+	].join("\n");
+	const functions = analyzeSource(ts, "arrows.ts", source);
+	const choose = functions.find((f) => f.name === "choose");
+	const dead = functions.find((f) => f.name === "dead");
+	if (!choose || !dead) throw new Error("arrows not found");
+	const fileFunctions = [
+		{
+			start: { line: 1, column: 16 },
+			end: { line: 1, column: null },
+			hits: 5,
+		},
+		{
+			start: { line: 2, column: 13 },
+			end: { line: 2, column: null },
+			hits: 0,
+		},
+	];
+	const statements = [
+		{ startLine: 1, endLine: 1, startColumn: 0, endColumn: 37, hits: 5 },
+		{ startLine: 2, endLine: 2, startColumn: 0, endColumn: 37, hits: 0 },
+	];
+	assert.equal(functionCoverage(choose, statements, fileFunctions), 1);
+	assert.equal(functionCoverage(dead, statements, fileFunctions), 0);
+});

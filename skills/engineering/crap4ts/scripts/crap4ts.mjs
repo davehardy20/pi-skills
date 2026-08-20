@@ -246,7 +246,7 @@ export function parseCoverageData(data) {
 		// async) so TS spans can start earlier than Istanbul's function node.
 		const functions = Object.entries(cov.fnMap ?? {})
 			.filter(([, range]) => range?.loc ?? range?.decl)
-			.map(([, range]) => {
+			.map(([id, range]) => {
 				const span = range.loc ?? range.decl;
 				// Preserve null columns: real Istanbul fnMap data uses null for
 				// "to end of line". Comparisons null-guard, and a coerced 0 here
@@ -261,6 +261,10 @@ export function parseCoverageData(data) {
 						line: span.end.line,
 						column: span.end.column ?? null,
 					},
+					// Retain the fnMap hit count (cov.f): concise-bodied arrows
+					// have no attributable statements (their only statement is the
+					// excluded enclosing declaration), so execution data lives here.
+					hits: cov.f?.[id] ?? null,
 				};
 			});
 		map.set(resolve(file), { statements, functions });
@@ -336,7 +340,13 @@ export function functionCoverage(fn, statements, fileFunctions = []) {
 		total += 1;
 		if (s.hits > 0) covered += 1;
 	}
-	if (total === 0) return null;
+	if (total === 0) {
+		// Concise-bodied arrows have no attributable statements (their only
+		// statement is the excluded enclosing declaration). Fall back to the
+		// fnMap hit count so executed arrows are not reported N/A.
+		const ownHits = own.map((g) => g.hits).find((h) => h != null);
+		return ownHits == null ? null : ownHits > 0 ? 1 : 0;
+	}
 	return covered / total;
 }
 
