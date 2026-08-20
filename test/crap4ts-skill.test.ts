@@ -81,6 +81,23 @@ test("analyzeSource assigns contextual names and reports nested functions separa
 	assert.equal(formatAmount?.cc, 1);
 });
 
+test("analyzeSource unquotes string-keyed property and method names", () => {
+	const source = `
+		const h = { "on-click": () => {} };
+		class Actions {
+			"do-thing"() { return 1; }
+			get "cached-value"() { return 2; }
+		}
+	`;
+	const functions = analyzeSource(ts, "string-keys.ts", source);
+	const names = functions.map((fn) => fn.name);
+	assert.ok(names.includes("on-click"));
+	assert.ok(names.includes("Actions.do-thing"));
+	assert.ok(names.includes("Actions.cached-value"));
+	// names must be unquoted, never `"on-click"`
+	for (const name of names) assert.ok(!name.startsWith('"'));
+});
+
 test("analyzeSource handles unreadable code paths gracefully", () => {
 	const functions = analyzeSource(ts, "empty.ts", "");
 	assert.deepEqual(functions, []);
@@ -124,7 +141,7 @@ test("matchStatements uses exact match then unique suffix fallback", () => {
 	});
 	// exact
 	assert.equal(matchStatements("/other/build/x/src/core.ts", map)?.length, 1);
-	// unique 3-segment suffix fallback
+	// unique 2-segment suffix fallback
 	assert.equal(matchStatements("/proj/src/core.ts", map)?.length, 1);
 	// no match at all
 	assert.equal(matchStatements("/proj/src/nope.ts", map), null);

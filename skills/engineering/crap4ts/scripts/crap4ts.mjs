@@ -119,12 +119,12 @@ function complexityOf(ts, fnNode) {
 	return decisions + 1;
 }
 
-function identifierText(nameNode) {
+function identifierText(ts, nameNode) {
 	if (!nameNode) return null;
 	if (
-		nameNode.kind === 79 /* Identifier */ ||
-		nameNode.kind === 12 /* StringLiteral */ ||
-		nameNode.kind === 9 /* NumericLiteral */
+		nameNode.kind === ts.SyntaxKind.Identifier ||
+		nameNode.kind === ts.SyntaxKind.StringLiteral ||
+		nameNode.kind === ts.SyntaxKind.NumericLiteral
 	) {
 		return nameNode.text ?? String(nameNode.text);
 	}
@@ -153,7 +153,7 @@ function contextualName(ts, node) {
 		return parent.name.text;
 	}
 	if (parent.kind === ts.SyntaxKind.PropertyAssignment) {
-		return identifierText(parent.name);
+		return identifierText(ts, parent.name);
 	}
 	if (
 		parent.kind === ts.SyntaxKind.BinaryExpression &&
@@ -177,7 +177,7 @@ function functionRecord(ts, node, sourceFile, fileName) {
 		node.kind === ts.SyntaxKind.GetAccessor ||
 		node.kind === ts.SyntaxKind.SetAccessor
 	) {
-		const method = identifierText(node.name) ?? "<method>";
+		const method = identifierText(ts, node.name) ?? "<method>";
 		const owner = ownerName(ts, node);
 		name = owner ? `${owner}.${method}` : method;
 	} else if (node.kind === ts.SyntaxKind.FunctionExpression) {

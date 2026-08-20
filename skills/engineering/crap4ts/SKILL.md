@@ -49,7 +49,8 @@ node <skill-dir>/scripts/crap4ts.mjs
 Zero config: it detects the package.json, wipes stale `coverage/`, runs the
 project's coverage command (`test:coverage` script, else vitest, else jest),
 then analyzes. Requires `typescript` available in the target project
-(peer dependency for AST parsing). If coverage cannot run, coverage and CRAP
+(peer dependency for AST parsing; the script falls back to the
+skill checkout's node_modules). If coverage cannot run, coverage and CRAP
 are reported as `N/A` with a stderr warning — never fabricated numbers.
 
 ## Usage
