@@ -190,3 +190,13 @@ Pi safe-runner equivalents:
 - `run_vitest test/opsec-document-manager.test.ts`;
 - `run_typecheck` with `tsconfig.json`;
 - `run_biome src test skills/engineering/opsec-framework-doc/scripts/document-manager.ts`.
+
+Mutation gate (Stryker, scoped via `stryker.config.json`):
+
+```bash
+npm run mutation
+```
+
+Reports land in `reports/mutation/` (gitignored); the run exits non-zero if the
+mutation score drops below the `thresholds.break` floor (currently 49,
+just under the present 49.56 baseline) in `stryker.config.json`.
