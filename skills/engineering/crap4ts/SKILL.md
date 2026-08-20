@@ -103,8 +103,11 @@ change the code safely. When coverage is unknown, act as if it were absent.
    `while`, `do`, `case`, `catch`, ternaries, `&&`, `||`, `??`, and their
    logical-assignment forms (`&&=`, `||=`, `??=`).
 5. Maps coverage per function from `coverage-final.json` (exact path match,
-   then unique path-suffix fallback like crap4go); coverage is the fraction of
-   overlapping statements with hits > 0.
+   then unique path-suffix fallback like crap4go); coverage is the fraction
+   of statements fully contained in the function's own span with hits > 0.
+   Enclosing statements (e.g. a wrapper hit merely by module load) and
+   nested-function statements (via fnMap `loc` spans) are excluded; no
+   applicable statements report N/A.
 6. Applies `CRAP = CC² × (1 − coverage)³ + CC`, sorts worst-first.
 
 ## Recommended Workflow

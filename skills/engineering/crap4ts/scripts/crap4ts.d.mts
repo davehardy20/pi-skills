@@ -76,9 +76,18 @@ export function functionCoverage(
 	fileFunctions?: FunctionSpan[],
 ): number | null;
 
+/**
+ * fnMap loc spans that ARE the given function: end position matches
+ * exactly and start sits on the same line (reconciling TS modifier offsets).
+ */
+export function ownFunctionSpans(
+	fn: Pick<CrapFunction, "start" | "end">,
+	fileFunctions: FunctionSpan[],
+): FunctionSpan[];
+
 /** Matches a source path against coverage, with unique path-suffix fallback. */
 export function matchStatements(
-	absoleteFilePath: string,
+	absoluteFilePath: string,
 	coverageMap: CoverageMap,
 ): { statements: StatementRange[]; functions: FunctionSpan[] } | null;
 

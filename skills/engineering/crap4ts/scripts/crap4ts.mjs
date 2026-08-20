@@ -237,12 +237,18 @@ export function parseCoverageData(data) {
 				hits: cov.s?.[id] ?? 0,
 			});
 		}
+		// loc = full span incl. body (used for nested-ownership containment);
+		// decl = header only. TS node.getStart() includes modifiers (export/
+		// async) so TS spans can start earlier than Istanbul's function node.
 		const functions = Object.values(cov.fnMap ?? {}).map((range) => ({
 			start: {
-				line: range.decl.start.line,
-				column: range.decl.start.column ?? 0,
+				line: (range.loc ?? range.decl).start.line,
+				column: (range.loc ?? range.decl).start.column ?? 0,
 			},
-			end: { line: range.decl.end.line, column: range.decl.end.column ?? 0 },
+			end: {
+				line: (range.loc ?? range.decl).end.line,
+				column: (range.loc ?? range.decl).end.column ?? 0,
+			},
 		}));
 		map.set(resolve(file), { statements, functions });
 	}
@@ -273,8 +279,12 @@ function rangesEqual(a, b) {
 export function functionCoverage(fn, statements, fileFunctions = []) {
 	if (!statements || statements.length === 0) return null;
 	if (!fn.start || !fn.end) return null;
+	// A fnMap span is THIS function when its end matches (reconciling the
+	// TS-vs-Istanbul start-offset difference for modifiers); all other
+	// contained spans are nested functions.
+	const own = ownFunctionSpans(fn, fileFunctions);
 	const nested = fileFunctions.filter(
-		(g) => !rangesEqual(g, fn) && rangeContains(fn, g),
+		(g) => !own.includes(g) && rangeContains(fn, g),
 	);
 	let total = 0;
 	let covered = 0;
@@ -293,6 +303,22 @@ export function functionCoverage(fn, statements, fileFunctions = []) {
 	return covered / total;
 }
 
+function sameEnd(g, fn) {
+	return (
+		posCompare(g.end, fn.end) === 0 &&
+		posCompare(g.start, fn.start) >= 0 &&
+		g.start.line === fn.start.line
+	);
+}
+
+// Istanbul fnMap spans use the instrumented function node, which starts
+// after modifiers like export/async that TS node.getStart() includes. A
+// loc is the function's own span when its end matches exactly and its
+// start sits on the same line as the TS span start.
+export function ownFunctionSpans(fn, fileFunctions) {
+	if (!fn.start || !fn.end) return [];
+	return fileFunctions.filter((g) => sameEnd(g, fn));
+}
 const warnedSuffixes = new Set();
 
 // Exact path match first; unique path-suffix match second (like crap4go).

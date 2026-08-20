@@ -161,7 +161,6 @@ test("matchStatements uses exact match then unique suffix fallback", () => {
 		},
 	});
 	// exact
-	// exact
 	assert.equal(
 		matchStatements("/other/build/x/src/core.ts", map)?.statements.length,
 		1,
@@ -699,4 +698,61 @@ test("functionCoverage still credits a fully called sibling function", () => {
 	}));
 	// Both statements are contained in the function span and hit.
 	assert.equal(functionCoverage(called, statements, fileFunctions), 1);
+});
+
+test("functionCoverage excludes nested arrow using real-shaped fnMap loc/decl", () => {
+	// Real Istanbul fnMap: decl = header only, loc = full span incl. body.
+	// The outer function TS span includes the `export` modifier, so its TS
+	// start (col 0) precedes the loc start (col 7), but ends must match.
+	const source = [
+		"export function outer(a: number) {",
+		"  const cb = (b: number) => {",
+		"    if (b > 1) return 2;",
+		"    return 0;",
+		"  };",
+		"  return cb(a) + (a ? 1 : 0);",
+		"}",
+	].join("\n");
+	const functions = analyzeSource(ts, "outer.ts", source);
+	const outer = functions.find((fn) => fn.name === "outer");
+	if (!outer) throw new Error("outer not found");
+
+	const fileFunctions = [
+		// outer: loc spans `function outer...` through final `}` (end matches
+		// TS span end; start on same line, after `export `).
+		{
+			start: { line: 1, column: 7 },
+			end: { line: 7, column: 1 },
+		},
+		// nested cb arrow: loc spans the full arrow incl. body.
+		{
+			start: { line: 2, column: 13 },
+			end: { line: 5, column: 4 },
+		},
+	];
+	// cb's body statement is unhit (arrow never called); outer's own
+	// statements are hit.
+	const statements = [
+		{ startLine: 2, endLine: 5, startColumn: 13, endColumn: 4, hits: 1 },
+		{ startLine: 3, endLine: 3, startColumn: 4, endColumn: 22, hits: 0 },
+		{ startLine: 4, endLine: 4, startColumn: 4, endColumn: 14, hits: 0 },
+		{ startLine: 6, endLine: 6, startColumn: 2, endColumn: 28, hits: 3 },
+	];
+	// Statement on lines 2-5 is the enclosing const wrapping cb: it overlaps
+	// outer but belongs to cb's declaration, hit by outer's execution.
+	const cov = functionCoverage(outer, statements, fileFunctions);
+	// outer's own applicable statements: the wrapping const (hit) and line 6
+	// (hit); cb's body statements (lines 3-4) are excluded as nested.
+	assert.equal(cov, 1);
+
+	const cb = functions.find((fn) => fn.name === "cb");
+	if (!cb) throw new Error("cb not found");
+	// cb's coverage: only its body statements count (lines 3-4, unhit); the
+	// enclosing const statement (hit) is NOT contained in cb's span start.
+	const cbStatements = [
+		{ startLine: 2, endLine: 5, startColumn: 13, endColumn: 4, hits: 1 },
+		{ startLine: 3, endLine: 3, startColumn: 4, endColumn: 22, hits: 0 },
+		{ startLine: 4, endLine: 4, startColumn: 4, endColumn: 14, hits: 0 },
+	];
+	assert.equal(functionCoverage(cb, cbStatements, fileFunctions), 0);
 });
