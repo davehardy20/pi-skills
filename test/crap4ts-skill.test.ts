@@ -15,6 +15,7 @@ import {
 	formatReport,
 	functionCoverage,
 	matchStatements,
+	ownFunctionSpans,
 	parseCoverageData,
 	SOURCE_EXTENSIONS,
 	shouldExcludeFile,
@@ -821,4 +822,39 @@ test("parseCoverageData skips fnMap entries lacking loc and decl", () => {
 	const entry = map.get("/proj/src/core.ts");
 	assert.equal(entry?.functions.length, 1);
 	assert.equal(entry?.statements.length, 1);
+});
+
+test("ownFunctionSpans picks the innermost same-end loc for curried arrows", () => {
+	const source = [
+		"export const curried = (a: number) => (b: number) => {",
+		"  return a > b ? a : b;",
+		"};",
+	].join("\n");
+	const functions = analyzeSource(ts, "curried.ts", source);
+	// The inner arrow is <anonymous> (its parent is a return expression),
+	// so find it as the later-start function.
+	const inner = functions
+		.filter((fn) => fn.start.line === 1)
+		.reduce((a, b) => (a.start.column >= b.start.column ? a : b));
+	if (!inner) throw new Error("inner arrow not found");
+	const outer = functions.find((fn) => fn.name === "curried");
+	if (!outer) throw new Error("outer arrow not found");
+
+	// Real Istanbul fnMap for this source (verified against vitest+coverage-v8):
+	//   (anonymous_0) loc: start {1,24} end {3,null}   <- outer arrow's own
+	//   (anonymous_1) loc: start {1,53} end {3,null}   <- inner arrow's own
+	// TS spans: outer {1,23}-{3,1}, inner {1,38}-{3,1} (exclusive ends).
+	const fileFunctions = [
+		{ start: { line: 1, column: 24 }, end: { line: 3, column: null } },
+		{ start: { line: 1, column: 53 }, end: { line: 3, column: null } },
+	];
+	const innerOwn = ownFunctionSpans(inner, fileFunctions);
+	assert.equal(innerOwn.length, 1);
+	assert.equal(innerOwn[0]?.start.column, 53);
+
+	// The outer arrow's own loc is the earliest-start qualifier (24); the
+	// later-start loc belongs to the nested inner arrow.
+	const outerOwn = ownFunctionSpans(outer, fileFunctions);
+	assert.equal(outerOwn.length, 1);
+	assert.equal(outerOwn[0]?.start.column, 24);
 });

@@ -309,21 +309,31 @@ export function functionCoverage(fn, statements, fileFunctions = []) {
 }
 
 function sameEnd(g, fn) {
-	// End equality + a start no earlier than the TS span (which includes
-	// modifiers/decorators) identifies the function's own loc. The same-line
-	// conjunct is intentionally dropped: split `export` or decorators can
-	// push the loc onto a different line than the TS start.
-	return posCompare(g.end, fn.end) === 0 && posCompare(g.start, fn.start) >= 0;
+	// Real Istanbul data: loc.end.column can be null (-> 0), and TS end
+	// positions are exclusive while Istanbul's are inclusive, so the loc
+	// end column sits 0-1 chars before the TS end column on the same line.
+	if (g.end.line !== fn.end.line) return false;
+	const endCol = (g.end.column ?? 0) - (fn.end.column ?? 0);
+	if (endCol < -1 || endCol > 0) return false;
+	return posCompare(g.start, fn.start) >= 0;
 }
 
-// Istanbul fnMap spans use the instrumented function node, which starts
-// after modifiers like export/async that TS node.getStart() includes. A
-// loc is the function's own span when its end matches exactly and its
-// start sits on the same line as the TS span start.
+// A loc is the function's own span when it ends at the function's end
+// (with inclusive/exclusive column tolerance) and starts no earlier than
+// the TS span start (TS spans include modifiers/decorators; Istanbul
+// locs start at the parameters or body). With several qualifying locs
+// (curried arrows share an end), the earliest-start one is the function's
+// own — later starts belong to nested functions.
 export function ownFunctionSpans(fn, fileFunctions) {
 	if (!fn.start || !fn.end) return [];
-	return fileFunctions.filter((g) => sameEnd(g, fn));
+	const candidates = fileFunctions.filter((g) => sameEnd(g, fn));
+	if (candidates.length <= 1) return candidates;
+	const own = candidates.reduce((a, b) =>
+		posCompare(a.start, b.start) <= 0 ? a : b,
+	);
+	return [own];
 }
+
 const warnedSuffixes = new Set();
 
 // Exact path match first; unique path-suffix match second (like crap4go).

@@ -48,8 +48,9 @@ export interface StatementRange {
 
 /** One Istanbul fnMap declaration range (0-based columns). */
 export interface FunctionSpan {
-	start: { line: number; column: number };
-	end: { line: number; column: number };
+	/** Columns may be null in real Istanbul fnMap data. */
+	start: { line: number; column: number | null };
+	end: { line: number; column: number | null };
 }
 
 /** Absolute source path -> statements plus function declaration spans. */
@@ -77,8 +78,11 @@ export function functionCoverage(
 ): number | null;
 
 /**
- * fnMap loc spans that ARE the given function: end position matches
- * exactly and start sits on the same line (reconciling TS modifier offsets).
+ * fnMap loc spans that ARE the given function: end line matches with
+ * column tolerance (Istanbul ends are inclusive, columns may be null) and
+ * start is no earlier than the TS span start (TS spans include modifiers/
+ * decorators). With several qualifying locs (curried arrows), the
+ * earliest-start one is the function's own.
  */
 export function ownFunctionSpans(
 	fn: Pick<CrapFunction, "start" | "end">,
