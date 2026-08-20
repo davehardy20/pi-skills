@@ -14,9 +14,9 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const SCRIPT_DIR = dirname(new URL(import.meta.url).pathname);
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 export const SOURCE_EXTENSIONS = new Set([
 	".js",
@@ -337,7 +337,7 @@ function loadTypeScript(rootDir) {
 	);
 }
 
-function detectCoverageCommand(rootDir, pkg) {
+export function detectCoverageCommand(rootDir, pkg) {
 	const scripts = pkg.scripts ?? {};
 	if (typeof scripts["test:coverage"] === "string")
 		return "npm run test:coverage";

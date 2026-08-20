@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import ts from "typescript";
 import { test } from "vitest";
 import {
 	analyzeSource,
 	buildRows,
 	computeCrap,
+	detectCoverageCommand,
 	evaluateThreshold,
 	formatReport,
 	functionCoverage,
@@ -298,4 +299,43 @@ test("temporary-file smoke: analyzeSource works on real files", async () => {
 	const functions = analyzeSource(ts, file, text);
 	assert.equal(functions[0]?.name, "f");
 	assert.equal(functions[0]?.cc, 2);
+});
+
+test("detectCoverageCommand prefers scripts then local runners", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-detect-`);
+	const { mkdir, writeFile: write, rm } = await import("node:fs/promises");
+	await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
+	try {
+		// no scripts, no runners -> null
+		assert.equal(detectCoverageCommand(dir, {}), null);
+
+		// test:coverage script wins
+		assert.equal(
+			detectCoverageCommand(dir, {
+				scripts: { "test:coverage": "vitest --coverage" },
+			}),
+			"npm run test:coverage",
+		);
+
+		// local vitest binary is picked when no scripts exist
+		await write(
+			join(dir, "node_modules", ".bin", "vitest"),
+			"#!/bin/sh\n",
+			"utf8",
+		);
+		const vitestCommand = detectCoverageCommand(dir, {});
+		assert.ok(vitestCommand?.includes("vitest"));
+
+		// local jest is picked when vitest is absent
+		await rm(join(dir, "node_modules", ".bin", "vitest"));
+		await write(
+			join(dir, "node_modules", ".bin", "jest"),
+			"#!/bin/sh\n",
+			"utf8",
+		);
+		const jestCommand = detectCoverageCommand(dir, {});
+		assert.ok(jestCommand?.includes("jest"));
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
 });

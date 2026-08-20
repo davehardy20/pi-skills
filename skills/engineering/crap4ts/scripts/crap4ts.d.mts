@@ -70,8 +70,15 @@ export interface CrapRow {
 	coverage: number | null;
 	crap: number | null;
 }
+/**
+ * Picks the coverage command for a project: `test:coverage` script, else
+ * `coverage` script, else local vitest, else local jest. Null when none exist.
+ */
+export function detectCoverageCommand(
+	rootDir: string,
+	pkg: { scripts?: Record<string, unknown> },
+): string | null;
 
-/** Joins functions with coverage and computes CRAP rows. */
 export function buildRows(
 	functions: CrapFunction[],
 	coverageMap: CoverageMap | null,

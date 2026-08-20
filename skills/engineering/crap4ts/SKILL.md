@@ -71,7 +71,7 @@ CRAP Report
 ===========
 Function                          File                              CC   Cov%     CRAP
 -------------------------------------------------------------------------------------
-validateTransaction               src/payments/core.ts              12   45.0%   130.2
+validateTransaction               src/payments/core.ts              12   45.0%    36.0
 formatAmount                      src/payments/core.ts               1  100.0%     1.0
 ```
 
@@ -127,4 +127,6 @@ One function per pass — Ch 12's simple-design discipline, not batch refactors.
 - Ask Dave before running a full coverage suite in large repos; suggest the
    `--changed` scope instead.
 - Use `--fail-over N` as a CI or quality-gate closeout check (exit 2 on
-   breach, mirroring crap4java's exit-code gate).
+   breach, mirroring crap4java's exit-code gate). N/A-coverage rows never
+   breach the gate; pair the gate with a coverage-required check when that
+   matters.
