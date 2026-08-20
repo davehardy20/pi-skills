@@ -513,3 +513,70 @@ test("CLI smoke: --changed exits 1 without origin/main or origin/master", async 
 		await rm(dir, { recursive: true, force: true });
 	}
 });
+
+test("matchStatements warns once and returns null on ambiguous suffix", () => {
+	const map = parseCoverageData({
+		"/a/build/src/core.ts": {
+			statementMap: { 0: { start: { line: 1 }, end: { line: 1 } } },
+			s: { 0: 1 },
+		},
+		"/b/build/src/core.ts": {
+			statementMap: { 0: { start: { line: 1 }, end: { line: 1 } } },
+			s: { 0: 1 },
+		},
+	});
+	const stderrWrites: string[] = [];
+	const originalWrite = process.stderr.write.bind(process.stderr);
+	process.stderr.write = ((chunk: string) => {
+		stderrWrites.push(chunk);
+		return true;
+	}) as typeof process.stderr.write;
+	try {
+		assert.equal(matchStatements("/proj/src/core.ts", map), null);
+		assert.equal(matchStatements("/proj/src/core.ts", map), null);
+		const ambiguousWarnings = stderrWrites.filter((w) =>
+			w.includes("ambiguous coverage match"),
+		);
+		// warns exactly once despite two calls (module-level dedupe)
+		assert.equal(ambiguousWarnings.length, 1);
+	} finally {
+		process.stderr.write = originalWrite;
+	}
+});
+
+test("CLI smoke: --changed includes untracked never-staged files", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-untracked-`);
+	try {
+		const git = (...args: string[]) =>
+			execSync(`git ${args.join(" ")}`, { cwd: dir, encoding: "utf8" });
+		git("-c init.defaultBranch=main init");
+		git('config user.email "test@example.com"');
+		git('config user.name "Test"');
+		await writeFile(
+			join(dir, "package.json"),
+			JSON.stringify({ name: "fixture", private: true }),
+			"utf8",
+		);
+		const { mkdir } = await import("node:fs/promises");
+		await mkdir(join(dir, "src"), { recursive: true });
+		const body = (name: string) =>
+			`export function ${name}(a: number): number {\n  if (a > 1) return 2;\n  return a;\n}\n`;
+		await writeFile(
+			join(dir, "src", "committed.ts"),
+			body("committed"),
+			"utf8",
+		);
+		git("add .");
+		git("commit -m base");
+		git("update-ref refs/remotes/origin/main HEAD");
+		// never-staged new file: invisible to git diff, must still be reported
+		await writeFile(join(dir, "src", "brand-new.ts"), body("brandNew"), "utf8");
+
+		const result = runCli(dir, "--changed", "--no-coverage");
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /brandNew\s+src\/brand-new\.ts/);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});

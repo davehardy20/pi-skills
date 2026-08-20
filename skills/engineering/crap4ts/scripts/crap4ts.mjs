@@ -457,17 +457,42 @@ function changedFiles(rootDir) {
 		process.stderr.write("crap4ts: git diff --name-only failed\n");
 		process.exit(1);
 	}
-	return diff.stdout
-		.toString()
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(
+	const filterSourceLines = (lines) =>
+		lines.filter(
 			(line) =>
 				line.length > 0 &&
 				SOURCE_EXTENSIONS.has(extname(line)) &&
 				!shouldExcludeFile(line.split("/").pop() ?? "") &&
 				existsSync(resolve(rootDir, line)),
 		);
+
+	const tracked = filterSourceLines(
+		diff.stdout
+			.toString()
+			.split("\n")
+			.map((line) => line.trim()),
+	);
+
+	// Untracked (never-staged) files never appear in git diff; union them in
+	// so WIP code — often the riskiest — is not silently omitted.
+	const untracked = spawnSync(
+		"git",
+		["ls-files", "--others", "--exclude-standard"],
+		{ cwd: rootDir },
+	);
+	if (untracked.status !== 0) {
+		process.stderr.write("crap4ts: git ls-files --others failed\n");
+		process.exit(1);
+	}
+	return [
+		...tracked,
+		...filterSourceLines(
+			untracked.stdout
+				.toString()
+				.split("\n")
+				.map((line) => line.trim()),
+		),
+	];
 }
 
 function printUsage() {

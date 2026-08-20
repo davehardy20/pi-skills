@@ -10,9 +10,16 @@ declare module "node:assert/strict" {
 }
 
 declare module "node:child_process" {
+	// Minimal Buffer shape for execSync without an encoding option; full
+	// @types/node is intentionally absent from this package's tsconfig.
+	interface RawBuffer extends Uint8Array {}
 	export function execSync(
 		command: string,
-		options?: { cwd?: string; encoding?: string },
+		options: { encoding?: never; cwd?: string },
+	): RawBuffer;
+	export function execSync(
+		command: string,
+		options: { cwd?: string; encoding: string },
 	): string;
 	export function spawnSync(
 		command: string,
@@ -88,4 +95,6 @@ declare module "node:test" {
 declare const process: {
 	execPath: string;
 	getuid?: () => number;
+	stdout: { write(chunk: string): boolean };
+	stderr: { write(chunk: string): boolean };
 };
