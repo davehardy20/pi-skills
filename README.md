@@ -34,6 +34,12 @@ Local Pi skills package for Dave's workflow.
 - `thermo-nuclear-code-quality-review` — runs an intentionally strict
   maintainability review for abstraction quality, file sprawl, spaghetti
   branching, and missed simplification opportunities.
+- `crap4ts` — CRAP metric (Change Risk Anti-Pattern,
+  `CC² × (1 − coverage)³ + CC`) for JavaScript/TypeScript: runs the target
+  project's Istanbul coverage, extracts cyclomatic complexity via the
+  TypeScript compiler API, and reports the worst functions first with a
+  `--fail-over` quality-gate exit code. Lineage: crap4j → crap4clj →
+  crap4go → crap4java → crap4ts.
 
 ## Attribution
 
@@ -71,6 +77,12 @@ maintained by WikiProject AI Cleanup.
 `humanizer` and `thermo-nuclear-code-quality-review` were ported from Dave's
 local `~/.pi/agent/skills/` directory into this package so `pi install
 /Users/dave/tools/pi-skills` can manage them together.
+
+`crap4ts` is a JavaScript/TypeScript port of the unclebob CRAP metric
+family (`crap4j` by Alberto Savoia and Robert C. Martin, plus `crap4clj`,
+`crap4go`, and `crap4java`). See
+`skills/engineering/crap4ts/ATTRIBUTION.md` for the full lineage and
+formula source.
 
 `opsec-framework-doc` was ported from Dave's OpenCode skill in
 `~/Desktop/opsec-framework-doc`. The Pi port preserves the template, sample
@@ -131,6 +143,10 @@ Invoke directly:
 
 ```text
 /skill:opsec-framework-doc create an OpSec guide from these engagement notes
+```
+
+```text
+/skill:crap4ts run a CRAP report on src/ and pick the riskiest function
 ```
 
 Or ask naturally for skill-covered work. `seeds-architecture-review` is intended for repository work
