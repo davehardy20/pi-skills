@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -343,7 +343,7 @@ test("detectCoverageCommand prefers scripts then local runners", async () => {
 	}
 });
 
-test("exported constants match their declarations (d.mts drift guard)", () => {
+test("exported constants are populated Sets", () => {
 	assert.ok(SOURCE_EXTENSIONS instanceof Set);
 	assert.ok(EXCLUDED_DIRS instanceof Set);
 	assert.ok(SOURCE_EXTENSIONS.has(".ts"));
@@ -452,6 +452,62 @@ test("CLI smoke: unknown option exits 1", async () => {
 		const result = runCli(dir, "--bogus");
 		assert.equal(result.status, 1);
 		assert.match(result.stderr, /unknown option/);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI smoke: --changed reports only files changed vs origin/main", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-changed-`);
+	try {
+		const git = (...args: string[]) =>
+			execSync(`git ${args.join(" ")}`, { cwd: dir, encoding: "utf8" });
+		git("-c init.defaultBranch=main init");
+		git('config user.email "test@example.com"');
+		git('config user.name "Test"');
+		await writeFile(
+			join(dir, "package.json"),
+			JSON.stringify({ name: "fixture", private: true }),
+			"utf8",
+		);
+		const { mkdir } = await import("node:fs/promises");
+		await mkdir(join(dir, "src"), { recursive: true });
+		const body = (name: string) =>
+			`export function ${name}(a: number): number {\n  if (a > 1) return 2;\n  return a;\n}\n`;
+		await writeFile(
+			join(dir, "src", "committed.ts"),
+			body("committed"),
+			"utf8",
+		);
+		await writeFile(join(dir, "src", "wip.ts"), body("wip"), "utf8");
+		git("add .");
+		git("commit -m base");
+		// origin/main now points at the base commit via a local "remote" ref
+		git("update-ref refs/remotes/origin/main HEAD");
+		// change only wip.ts after the base
+		await writeFile(join(dir, "src", "wip.ts"), body("wip2"), "utf8");
+
+		const result = runCli(dir, "--changed", "--no-coverage");
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /wip2\s+src\/wip\.ts/);
+		assert.ok(
+			!result.stdout.includes("committed"),
+			"unchanged file must not be reported",
+		);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI smoke: --changed exits 1 without origin/main or origin/master", async () => {
+	const dir = await createTempProject();
+	try {
+		execSync("git -c init.defaultBranch=trunk init", { cwd: dir });
+		const result = runCli(dir, "--changed", "--no-coverage");
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /origin\/main or origin\/master/);
 	} finally {
 		const { rm } = await import("node:fs/promises");
 		await rm(dir, { recursive: true, force: true });

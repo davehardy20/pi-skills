@@ -10,6 +10,10 @@ declare module "node:assert/strict" {
 }
 
 declare module "node:child_process" {
+	export function execSync(
+		command: string,
+		options?: { cwd?: string; encoding?: string },
+	): string;
 	export function spawnSync(
 		command: string,
 		args: string[],

@@ -356,8 +356,6 @@ export function detectCoverageCommand(rootDir, pkg) {
 }
 
 function runCoverage(rootDir, pkg, overrideCommand) {
-	const coverageDir = join(rootDir, "coverage");
-	rmSync(coverageDir, { recursive: true, force: true });
 	const command = overrideCommand ?? detectCoverageCommand(rootDir, pkg);
 	if (!command) {
 		process.stderr.write(
@@ -365,6 +363,8 @@ function runCoverage(rootDir, pkg, overrideCommand) {
 		);
 		return null;
 	}
+	const coverageDir = join(rootDir, "coverage");
+	rmSync(coverageDir, { recursive: true, force: true });
 	const result = spawnSync(command, {
 		shell: true,
 		cwd: rootDir,

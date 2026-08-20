@@ -49,8 +49,9 @@ node <skill-dir>/scripts/crap4ts.mjs
 Zero config: it detects the package.json, wipes stale `coverage/`, runs the
 project's coverage command (`test:coverage` script, else `coverage` script,
 else the local vitest or jest binary with JSON coverage), then analyzes.
-Requires `typescript` available in the target project (peer dependency for
-AST parsing; the script falls back to the
+Requires `typescript` in the target project; the script falls back to this
+skill repo's own `node_modules`. If TypeScript cannot be found the tool
+exits 1 with instructions; when no coverage runner exists, coverage and CRAP
 are reported as `N/A` with a stderr warning — never fabricated numbers.
 
 ## Usage
@@ -127,8 +128,7 @@ One function per pass — Ch 12's simple-design discipline, not batch refactors.
 - Ask Dave before running a full coverage suite in large repos; suggest the
    `--changed` scope instead.
 - Path handling (coverage fallback, `--changed` filtering) is POSIX-only;
-   Windows paths are unsupported.
-   `--changed` scope instead.
+  Windows paths are unsupported.
 - Use `--fail-over N` as a CI or quality-gate closeout check (exit 2 on
    breach, mirroring crap4java's exit-code gate). N/A-coverage rows never
    breach the gate; pair the gate with a coverage-required check when that
