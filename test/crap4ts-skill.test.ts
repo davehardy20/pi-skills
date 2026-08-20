@@ -1154,3 +1154,33 @@ test("parseCoverageData joins fnMap spans with cov.f hit counts", () => {
 	assert.equal(entry.functions[0].hits, 4);
 	assert.equal(entry.functions[1].hits, null);
 });
+
+test("empty statementMap still uses fnMap hits fallback", () => {
+	// Codex P2: a file with fnMap/f but EMPTY statementMap (e.g. only empty
+	// functions) must not early-return N/A; cov.f is definitive.
+	const source = [
+		"export function noop() {}",
+		"export function deadNoop() {}",
+	].join("\n");
+	const functions = analyzeSource(ts, "noop.ts", source);
+	const noop = functions.find((f) => f.name === "noop");
+	const dead = functions.find((f) => f.name === "deadNoop");
+	if (!noop || !dead) throw new Error("noops not found");
+	const fileFunctions = [
+		// Istanbul locs start at the function keyword (col 7) and end at the
+		// closing brace inclusive; TS ends are exclusive one past it.
+		{
+			start: { line: 1, column: 7 },
+			end: { line: 1, column: 24 },
+			hits: 9,
+		},
+		{
+			start: { line: 2, column: 7 },
+			end: { line: 2, column: 28 },
+			hits: 0,
+		},
+	];
+	assert.equal(functionCoverage(noop, [], fileFunctions), 1);
+	assert.equal(functionCoverage(dead, [], fileFunctions), 0);
+	assert.equal(functionCoverage(noop, null, fileFunctions), null);
+});

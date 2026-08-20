@@ -305,7 +305,11 @@ function rangesEqual(a, b) {
 // nested functions (via fnMap), so an uncalled high-complexity arrow
 // cannot appear covered.
 export function functionCoverage(fn, statements, fileFunctions = []) {
-	if (!statements || statements.length === 0) return null;
+	// Only a MISSING statement array returns immediately; an empty array
+	// still falls through to the fnMap-hits fallback (Codex P2: a file
+	// with fnMap/f but empty statementMap — e.g. only empty functions —
+	// still has definitive execution data in cov.f).
+	if (!statements) return null;
 	if (!fn.start || !fn.end) return null;
 	// A fnMap span is THIS function when its end matches (reconciling the
 	// TS-vs-Istanbul start-offset difference for modifiers); all other
