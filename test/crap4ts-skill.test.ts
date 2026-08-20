@@ -1066,3 +1066,20 @@ test("null end column has end-of-line semantics in containment", () => {
 		throw new Error(`expected null (no own statements), got ${cov}`);
 	}
 });
+
+test("bodyless declarations are skipped", () => {
+	// Overload signatures and declare functions share function syntax kinds
+	// but have no executable body; they must not become phantom N/A rows
+	// (Codex P2).
+	const source = [
+		"export declare function overload(x: number): string;",
+		"export function overload(x: string): string;",
+		"export function overload(x: number | string): string {",
+		"  return String(x);",
+		"}",
+	].join("\n");
+	const functions = analyzeSource(ts, "overloads.ts", source);
+	const rows = functions.filter((f) => f.name === "overload");
+	assert.equal(rows.length, 1, JSON.stringify(rows.map((f) => f.startLine)));
+	assert.equal(rows[0].startLine, 3);
+});

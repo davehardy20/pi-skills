@@ -214,7 +214,11 @@ export function analyzeSource(ts, fileName, text) {
 	);
 	const functions = [];
 	function visit(node) {
-		if (isFunctionLike(ts, node))
+		// Bodyless declarations (overload signatures, `declare` functions,
+		// abstract methods) share syntax kinds with real functions but have
+		// no executable body, no Istanbul entry, and would surface as
+		// phantom duplicate N/A rows — skip them.
+		if (isFunctionLike(ts, node) && node.body !== undefined)
 			functions.push(functionRecord(ts, node, sourceFile, fileName));
 		ts.forEachChild(node, visit);
 	}
