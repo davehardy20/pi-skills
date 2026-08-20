@@ -299,6 +299,19 @@ export function functionCoverage(fn, statements, fileFunctions = []) {
 			end: { line: s.endLine, column: s.endColumn ?? 0 },
 		};
 		if (!rangeContains(fn, stmt)) continue;
+		// Skip statements that wrap the function's own declaration: under
+		// Istanbul, a never-called function's declaration statement is marked
+		// hit merely by loading the module. Such a statement shares the
+		// function's end (with tolerance) and starts at or before the own
+		// loc's start (at the export/function keyword).
+		if (
+			own.some(
+				(g) =>
+					stmtEndsWithinTolerance(g, stmt) &&
+					posCompare(stmt.start, g.start) <= 0,
+			)
+		)
+			continue;
 		if (nested.some((g) => rangeContains(g, stmt) && !rangesEqual(g, stmt)))
 			continue;
 		total += 1;
@@ -309,13 +322,18 @@ export function functionCoverage(fn, statements, fileFunctions = []) {
 }
 
 function sameEnd(g, fn) {
-	// Real Istanbul data: loc.end.column can be null (-> 0), and TS end
-	// positions are exclusive while Istanbul's are inclusive, so the loc
-	// end column sits 0-1 chars before the TS end column on the same line.
-	if (g.end.line !== fn.end.line) return false;
-	const endCol = (g.end.column ?? 0) - (fn.end.column ?? 0);
-	if (endCol < -1 || endCol > 0) return false;
-	return posCompare(g.start, fn.start) >= 0;
+	return stmtEndsWithinTolerance(g, fn) && posCompare(g.start, fn.start) >= 0;
+}
+
+function stmtEndsWithinTolerance(g, stmt) {
+	// Real Istanbul data: loc/statement end columns can be null (meaning
+	// "to end of line"), and TS end positions are exclusive while
+	// Istanbul's are inclusive, so ends may differ by one column. A null
+	// column matches on line equality alone.
+	if (g.end.line !== stmt.end.line) return false;
+	if (g.end.column == null || stmt.end.column == null) return true;
+	const endCol = g.end.column - stmt.end.column;
+	return endCol >= -1 && endCol <= 1;
 }
 
 // A loc is the function's own span when it ends at the function's end

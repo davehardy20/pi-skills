@@ -858,3 +858,60 @@ test("ownFunctionSpans picks the innermost same-end loc for curried arrows", () 
 	assert.equal(outerOwn.length, 1);
 	assert.equal(outerOwn[0]?.start.column, 24);
 });
+
+test("uncalled named function declaration reports coverage 0", () => {
+	// Under Istanbul, a never-called function's DECLARATION statement is
+	// marked hit merely by loading the module. The declaration statement
+	// wraps the whole function (same end, earlier start) and must not count.
+	const source = [
+		"export function neverCalled(a: number) {",
+		"  if (a > 1) return 2;",
+		"  return a;",
+		"}",
+	].join("\n");
+	const functions = analyzeSource(ts, "never.ts", source);
+	const fn = functions.find((f) => f.name === "neverCalled");
+	if (!fn) throw new Error("neverCalled not found");
+
+	// Real-shaped Istanbul: statement 0 = the whole declaration (hit on
+	// module load); statement 1 = the if (never executed).
+	const statements = [
+		{
+			startLine: 1,
+			endLine: 4,
+			startColumn: 0,
+			endColumn: 1,
+			hits: 1,
+		},
+		{ startLine: 2, endLine: 2, startColumn: 2, endColumn: 19, hits: 0 },
+	];
+	const fileFunctions = [
+		{ start: { line: 1, column: 0 }, end: { line: 4, column: 1 } },
+	];
+	assert.equal(functionCoverage(fn, statements, fileFunctions), 0);
+});
+
+test("called named function keeps its coverage credit", () => {
+	const source = [
+		"export function called(a: number) {",
+		"  return a > 1 ? 2 : a;",
+		"}",
+	].join("\n");
+	const functions = analyzeSource(ts, "called2.ts", source);
+	const fn = functions.find((f) => f.name === "called");
+	if (!fn) throw new Error("called not found");
+	const statements = [
+		{
+			startLine: 1,
+			endLine: 3,
+			startColumn: 0,
+			endColumn: 1,
+			hits: 7,
+		},
+		{ startLine: 2, endLine: 2, startColumn: 2, endColumn: 21, hits: 7 },
+	];
+	const fileFunctions = [
+		{ start: { line: 1, column: 0 }, end: { line: 3, column: 1 } },
+	];
+	assert.equal(functionCoverage(fn, statements, fileFunctions), 1);
+});
