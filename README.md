@@ -78,9 +78,10 @@ maintained by WikiProject AI Cleanup.
 local `~/.pi/agent/skills/` directory into this package so `pi install
 /Users/dave/tools/pi-skills` can manage them together.
 
-`crap4ts` is a JavaScript/TypeScript port of the unclebob CRAP metric
-family (`crap4j` by Alberto Savoia and Robert C. Martin, plus `crap4clj`,
-`crap4go`, and `crap4java`). See
+`crap4ts` independently implements the unclebob CRAP metric formula for
+JavaScript/TypeScript, modeled on the CRAP metric family (`crap4j` by
+Alberto Savoia and Robert C. Martin, plus `crap4clj`, `crap4go`, and
+`crap4java`). See
 `skills/engineering/crap4ts/ATTRIBUTION.md` for the full lineage and
 formula source.
 
