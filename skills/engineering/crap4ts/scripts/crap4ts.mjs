@@ -250,7 +250,10 @@ export function functionCoverage(fn, statements) {
 	return covered / total;
 }
 
+const warnedSuffixes = new Set();
+
 // Exact path match first; unique path-suffix match second (like crap4go).
+// Path handling is POSIX-only; see Environment Notes in SKILL.md.
 export function matchStatements(absoluteFilePath, coverageMap) {
 	if (coverageMap.has(absoluteFilePath))
 		return coverageMap.get(absoluteFilePath);
@@ -260,7 +263,8 @@ export function matchStatements(absoluteFilePath, coverageMap) {
 		if (key.endsWith(`/${suffix}`)) candidates.push(key);
 	}
 	if (candidates.length === 1) return coverageMap.get(candidates[0]);
-	if (candidates.length > 1) {
+	if (candidates.length > 1 && !warnedSuffixes.has(suffix)) {
+		warnedSuffixes.add(suffix);
 		process.stderr.write(
 			`crap4ts: ambiguous coverage match for ${suffix} (${candidates.length} files); reporting N/A\n`,
 		);
