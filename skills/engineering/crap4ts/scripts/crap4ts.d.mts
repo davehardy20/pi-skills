@@ -24,6 +24,9 @@ export interface CrapFunction {
 	file: string;
 	startLine: number;
 	endLine: number;
+	/** Istanbul-style span (1-based line, 0-based column). */
+	start: { line: number; column: number };
+	end: { line: number; column: number };
 	cc: number;
 }
 
@@ -34,33 +37,50 @@ export function analyzeSource(
 	text: string,
 ): CrapFunction[];
 
-/** One Istanbul statement-range entry with hit counts. */
+/** One Istanbul statement-range entry with hit counts and columns. */
 export interface StatementRange {
 	startLine: number;
 	endLine: number;
+	startColumn?: number;
+	endColumn?: number;
 	hits: number;
 }
 
-/** Absolute source path -> statement ranges (from coverage-final.json). */
-export type CoverageMap = Map<string, StatementRange[]>;
+/** One Istanbul fnMap declaration range (0-based columns). */
+export interface FunctionSpan {
+	start: { line: number; column: number };
+	end: { line: number; column: number };
+}
+
+/** Absolute source path -> statements plus function declaration spans. */
+export type CoverageMap = Map<
+	string,
+	{
+		statements: StatementRange[];
+		functions: FunctionSpan[];
+	}
+>;
 
 /** Parses Istanbul coverage-final.json data into a CoverageMap. */
 export function parseCoverageData(data: Record<string, unknown>): CoverageMap;
 
 /**
- * Fraction of statements overlapping the function's line range that were hit.
- * Returns null when no statements overlap (reported as N/A).
+ * Fraction of statements fully contained in the function's own span that
+ * were hit. Enclosing statements (marked hit by module load) and statements
+ * owned by nested functions are excluded. Returns null when nothing applies
+ * (reported as N/A).
  */
 export function functionCoverage(
-	fn: Pick<CrapFunction, "startLine" | "endLine">,
+	fn: Pick<CrapFunction, "startLine" | "endLine" | "start" | "end">,
 	statements: StatementRange[] | null | undefined,
+	fileFunctions?: FunctionSpan[],
 ): number | null;
 
 /** Matches a source path against coverage, with unique path-suffix fallback. */
 export function matchStatements(
-	absoluteFilePath: string,
+	absoleteFilePath: string,
 	coverageMap: CoverageMap,
-): StatementRange[] | null;
+): { statements: StatementRange[]; functions: FunctionSpan[] } | null;
 
 /** One report row: CRAP score and inputs for a function. */
 export interface CrapRow {

@@ -186,17 +186,21 @@ function functionRecord(ts, node, sourceFile, fileName) {
 		name = contextualName(ts, node) ?? "<anonymous>";
 	}
 
-	const startLine =
-		sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line +
-		1;
-	const endLine =
-		sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
+	const startPos = sourceFile.getLineAndCharacterOfPosition(
+		node.getStart(sourceFile),
+	);
+	const endPos = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+	const startLine = startPos.line + 1;
+	const endLine = endPos.line + 1;
 
 	return {
 		name,
 		file: fileName,
 		startLine,
 		endLine,
+		// Istanbul convention: 1-based line, 0-based column.
+		start: { line: startLine, column: startPos.character },
+		end: { line: endLine, column: endPos.character },
 		cc: complexityOf(ts, node),
 	};
 }
@@ -221,30 +225,69 @@ export function analyzeSource(ts, fileName, text) {
 // ---- Coverage ----
 
 export function parseCoverageData(data) {
-	const map = new Map(); // absolute file path -> statements[]
+	const map = new Map(); // absolute file path -> { statements, functions }
 	for (const [file, cov] of Object.entries(data)) {
 		const statements = [];
 		for (const [id, range] of Object.entries(cov.statementMap ?? {})) {
 			statements.push({
 				startLine: range.start.line,
 				endLine: range.end.line,
+				startColumn: range.start.column ?? 0,
+				endColumn: range.end.column ?? 0,
 				hits: cov.s?.[id] ?? 0,
 			});
 		}
-		map.set(resolve(file), statements);
+		const functions = Object.values(cov.fnMap ?? {}).map((range) => ({
+			start: {
+				line: range.decl.start.line,
+				column: range.decl.start.column ?? 0,
+			},
+			end: { line: range.decl.end.line, column: range.decl.end.column ?? 0 },
+		}));
+		map.set(resolve(file), { statements, functions });
 	}
 	return map;
 }
 
-export function functionCoverage(fn, statements) {
+function posCompare(a, b) {
+	if (a.line !== b.line) return a.line - b.line;
+	return (a.column ?? 0) - (b.column ?? 0);
+}
+
+function rangeContains(outer, inner) {
+	return (
+		posCompare(outer.start, inner.start) <= 0 &&
+		posCompare(outer.end, inner.end) >= 0
+	);
+}
+
+function rangesEqual(a, b) {
+	return posCompare(a.start, b.start) === 0 && posCompare(a.end, b.end) === 0;
+}
+
+// Only statements fully contained in the function's own span count. This
+// excludes enclosing statements (e.g. the variable declaration wrapping an
+// arrow is marked hit merely by loading the module) and statements owned by
+// nested functions (via fnMap), so an uncalled high-complexity arrow
+// cannot appear covered.
+export function functionCoverage(fn, statements, fileFunctions = []) {
 	if (!statements || statements.length === 0) return null;
+	if (!fn.start || !fn.end) return null;
+	const nested = fileFunctions.filter(
+		(g) => !rangesEqual(g, fn) && rangeContains(fn, g),
+	);
 	let total = 0;
 	let covered = 0;
 	for (const s of statements) {
-		if (s.startLine <= fn.endLine && s.endLine >= fn.startLine) {
-			total += 1;
-			if (s.hits > 0) covered += 1;
-		}
+		const stmt = {
+			start: { line: s.startLine, column: s.startColumn ?? 0 },
+			end: { line: s.endLine, column: s.endColumn ?? 0 },
+		};
+		if (!rangeContains(fn, stmt)) continue;
+		if (nested.some((g) => rangeContains(g, stmt) && !rangesEqual(g, stmt)))
+			continue;
+		total += 1;
+		if (s.hits > 0) covered += 1;
 	}
 	if (total === 0) return null;
 	return covered / total;
@@ -278,10 +321,12 @@ export function buildRows(functions, coverageMap, rootDir) {
 	const rows = [];
 	for (const fn of functions) {
 		const absPath = resolve(rootDir, fn.file);
-		const statements = coverageMap
-			? matchStatements(absPath, coverageMap)
-			: null;
-		const coverage = functionCoverage(fn, statements);
+		const entry = coverageMap ? matchStatements(absPath, coverageMap) : null;
+		const coverage = functionCoverage(
+			fn,
+			entry?.statements ?? null,
+			entry?.functions ?? [],
+		);
 		rows.push({
 			name: fn.name,
 			file: relative(rootDir, absPath).split("\\").join("/"),

@@ -120,20 +120,37 @@ test("parseCoverageData and functionCoverage map statements to functions", () =>
 		},
 	};
 	const map = parseCoverageData(statements);
-	const cov = functionCoverage(
-		{ startLine: 1, endLine: 4 },
-		map.get("/proj/src/core.ts"),
-	);
+	const fn = {
+		startLine: 1,
+		endLine: 4,
+		start: { line: 1, column: 0 },
+		end: { line: 4, column: 20 },
+	};
+	const cov = functionCoverage(fn, map.get("/proj/src/core.ts")?.statements);
 	assert.equal(cov, 0.5);
 	// no overlap -> null (N/A), never fabricated
 	assert.equal(
 		functionCoverage(
-			{ startLine: 10, endLine: 20 },
-			map.get("/proj/src/core.ts"),
+			{
+				startLine: 10,
+				endLine: 20,
+				start: { line: 10, column: 0 },
+				end: { line: 20, column: 0 },
+			},
+			map.get("/proj/src/core.ts")?.statements,
 		),
 		null,
 	);
-	assert.equal(functionCoverage({ startLine: 1, endLine: 4 }, null), null);
+	assert.equal(functionCoverage(fn, null), null);
+	// missing positions -> N/A (legacy shape cannot be containment-checked)
+	assert.equal(
+		functionCoverage(
+			// legacy shape: positions missing
+			{ startLine: 1, endLine: 4 } as never,
+			map.get("/proj/src/core.ts")?.statements,
+		),
+		null,
+	);
 });
 
 test("matchStatements uses exact match then unique suffix fallback", () => {
@@ -144,9 +161,13 @@ test("matchStatements uses exact match then unique suffix fallback", () => {
 		},
 	});
 	// exact
-	assert.equal(matchStatements("/other/build/x/src/core.ts", map)?.length, 1);
+	// exact
+	assert.equal(
+		matchStatements("/other/build/x/src/core.ts", map)?.statements.length,
+		1,
+	);
 	// unique 2-segment suffix fallback
-	assert.equal(matchStatements("/proj/src/core.ts", map)?.length, 1);
+	assert.equal(matchStatements("/proj/src/core.ts", map)?.statements.length, 1);
 	// no match at all
 	assert.equal(matchStatements("/proj/src/nope.ts", map), null);
 });
@@ -158,17 +179,42 @@ test("buildRows joins coverage with complexity and computes CRAP", () => {
 			file: "src/core.ts",
 			startLine: 1,
 			endLine: 10,
+			start: { line: 1, column: 0 },
+			end: { line: 10, column: 1 },
 			cc: 10,
 		},
-		{ name: "simple", file: "src/core.ts", startLine: 12, endLine: 14, cc: 1 },
+		{
+			name: "simple",
+			file: "src/core.ts",
+			startLine: 12,
+			endLine: 14,
+			start: { line: 12, column: 0 },
+			end: { line: 14, column: 1 },
+			cc: 1,
+		},
 	];
 	const map = new Map([
 		[
 			resolve("/proj/src/core.ts"),
-			[
-				{ startLine: 1, endLine: 10, hits: 0 },
-				{ startLine: 12, endLine: 14, hits: 4 },
-			],
+			{
+				statements: [
+					{
+						startLine: 1,
+						endLine: 10,
+						startColumn: 0,
+						endColumn: 1,
+						hits: 0,
+					},
+					{
+						startLine: 12,
+						endLine: 14,
+						startColumn: 0,
+						endColumn: 1,
+						hits: 4,
+					},
+				],
+				functions: [],
+			},
 		],
 	]);
 	const rows = buildRows(functions, map, "/proj");
@@ -187,6 +233,8 @@ test("buildRows reports N/A without a coverage map", () => {
 			file: "src/core.ts",
 			startLine: 1,
 			endLine: 10,
+			start: { line: 1, column: 0 },
+			end: { line: 10, column: 1 },
 			cc: 10,
 		},
 	];
@@ -579,4 +627,76 @@ test("CLI smoke: --changed includes untracked never-staged files", async () => {
 		const { rm } = await import("node:fs/promises");
 		await rm(dir, { recursive: true, force: true });
 	}
+});
+
+test("functionCoverage excludes enclosing and nested statements (Codex P1)", () => {
+	// Module-level code (line 1) is hit on import; the arrow on lines 2-6 is
+	// never called. Old line-overlap logic let the enclosing/wrapper hits
+	// contaminate the arrow's coverage.
+	const source = [
+		'import { x } from "dep"; // enclosing statement, hit on module load',
+		"export const risky = (a: number) => {",
+		"  if (a > 1) return 2;",
+		"  if (a < 0) return 0;",
+		"  return a ? 1 : 0;",
+		"};",
+		"const helper = () => { if (x) return 1; return 0; };",
+		"export const w = x + 1;",
+	].join("\n");
+	const functions = analyzeSource(ts, "risky.ts", source);
+	const risky = functions.find((fn) => fn.name === "risky");
+	if (!risky) throw new Error("risky not found");
+
+	// Istanbul-style coverage: line 1 and line 8 statements hit (module load),
+	// arrow body statements (lines 3-5) never executed.
+	const statements = [
+		{ startLine: 1, endLine: 1, startColumn: 0, endColumn: 30, hits: 1 },
+		{ startLine: 3, endLine: 3, startColumn: 2, endColumn: 18, hits: 0 },
+		{ startLine: 4, endLine: 4, startColumn: 2, endColumn: 18, hits: 0 },
+		{ startLine: 5, endLine: 5, startColumn: 2, endColumn: 18, hits: 0 },
+		{ startLine: 8, endLine: 8, startColumn: 0, endColumn: 22, hits: 1 },
+	];
+	const fileFunctions = functions.map((fn) => ({
+		start: fn.start,
+		end: fn.end,
+	}));
+
+	// Uncalled arrow must NOT inherit the enclosing statement's hits: all
+	// contained statements are unhit -> coverage 0, not 2/5 or 3/5.
+	assert.equal(functionCoverage(risky, statements, fileFunctions), 0);
+
+	// helper is also uncalled; its single if-statement is unhit.
+	const helper = functions.find((fn) => fn.name === "helper");
+	if (!helper) throw new Error("helper not found");
+	const helperStatements = [
+		{
+			startLine: 7,
+			endLine: 7,
+			startColumn: 17,
+			endColumn: 47,
+			hits: 0,
+		},
+	];
+	assert.equal(functionCoverage(helper, helperStatements, fileFunctions), 0);
+});
+
+test("functionCoverage still credits a fully called sibling function", () => {
+	const source = [
+		"export function called(a: number) {",
+		"  return a ? 1 : 2;",
+		"}",
+	].join("\n");
+	const functions = analyzeSource(ts, "called.ts", source);
+	const called = functions.find((fn) => fn.name === "called");
+	if (!called) throw new Error("called not found");
+	const statements = [
+		{ startLine: 1, endLine: 3, startColumn: 0, endColumn: 1, hits: 5 },
+		{ startLine: 2, endLine: 2, startColumn: 2, endColumn: 18, hits: 5 },
+	];
+	const fileFunctions = functions.map((fn) => ({
+		start: fn.start,
+		end: fn.end,
+	}));
+	// Both statements are contained in the function span and hit.
+	assert.equal(functionCoverage(called, statements, fileFunctions), 1);
 });
