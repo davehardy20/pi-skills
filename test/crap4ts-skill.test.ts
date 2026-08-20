@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -9,11 +10,13 @@ import {
 	buildRows,
 	computeCrap,
 	detectCoverageCommand,
+	EXCLUDED_DIRS,
 	evaluateThreshold,
 	formatReport,
 	functionCoverage,
 	matchStatements,
 	parseCoverageData,
+	SOURCE_EXTENSIONS,
 	shouldExcludeFile,
 	sortRows,
 } from "../skills/engineering/crap4ts/scripts/crap4ts.mjs";
@@ -336,6 +339,83 @@ test("detectCoverageCommand prefers scripts then local runners", async () => {
 		const jestCommand = detectCoverageCommand(dir, {});
 		assert.ok(jestCommand?.includes("jest"));
 	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("exported constants match their declarations (d.mts drift guard)", () => {
+	assert.ok(SOURCE_EXTENSIONS instanceof Set);
+	assert.ok(EXCLUDED_DIRS instanceof Set);
+	assert.ok(SOURCE_EXTENSIONS.has(".ts"));
+	assert.ok(EXCLUDED_DIRS.has("node_modules"));
+});
+
+const SCRIPT_PATH = new URL(
+	"../skills/engineering/crap4ts/scripts/crap4ts.mjs",
+	import.meta.url,
+).pathname;
+
+async function createTempProject(): Promise<string> {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-cli-`);
+	const { mkdir } = await import("node:fs/promises");
+	await mkdir(join(dir, "src"), { recursive: true });
+	await writeFile(
+		join(dir, "package.json"),
+		JSON.stringify({ name: "fixture", private: true }),
+		"utf8",
+	);
+	await writeFile(
+		join(dir, "src", "core.ts"),
+		"export function risky(a: number): number {\n" +
+			"  if (a > 1) return 2;\n" +
+			"  if (a < 0) return 0;\n" +
+			"  return a ? 1 : 0;\n" +
+			"}\n",
+		"utf8",
+	);
+	return dir;
+}
+
+function runCli(dir: string, ...args: string[]) {
+	return spawnSync(process.execPath, [SCRIPT_PATH, ...args], {
+		cwd: dir,
+		encoding: "utf8",
+	});
+}
+
+test("CLI smoke: --no-coverage prints report and exits 0 under high threshold", async () => {
+	const dir = await createTempProject();
+	try {
+		const result = runCli(dir, "--no-coverage", "--fail-over", "1000");
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /^CRAP Report$/m);
+		assert.match(result.stdout, /risky\s+src\/core\.ts\s+4\s+N\/A\s+N\/A/);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI smoke: --fail-over 0 exits 2 with a threshold message", async () => {
+	const dir = await createTempProject();
+	try {
+		const result = runCli(dir, "--no-coverage");
+		// N/A coverage never breaches the gate (SKILL.md documents this)
+		assert.equal(result.status, 0, result.stderr);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI smoke: unknown option exits 1", async () => {
+	const dir = await createTempProject();
+	try {
+		const result = runCli(dir, "--bogus");
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /unknown option/);
+	} finally {
+		const { rm } = await import("node:fs/promises");
 		await rm(dir, { recursive: true, force: true });
 	}
 });

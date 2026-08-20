@@ -567,9 +567,13 @@ function main() {
 
 	const functions = [];
 	for (const file of filtered) {
-		const text = readFileSync(file, "utf8");
 		const rel = relative(rootDir, file);
-		functions.push(...analyzeSource(ts, rel, text));
+		try {
+			const text = readFileSync(file, "utf8");
+			functions.push(...analyzeSource(ts, rel, text));
+		} catch (error) {
+			process.stderr.write(`crap4ts: skipping ${rel}: ${error.message}\n`);
+		}
 	}
 
 	const rows = sortRows(buildRows(functions, coverageMap, rootDir));
