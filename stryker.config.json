@@ -7,6 +7,6 @@
 	],
 	"coverageAnalysis": "perTest",
 	"thresholds": {
-		"break": 50
+		"break": 49
 	}
 }

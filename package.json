@@ -7,7 +7,8 @@
 	"scripts": {
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
-		"validate:skills": "node scripts/validate-skills.mjs"
+		"validate:skills": "node scripts/validate-skills.mjs",
+		"mutation": "stryker run"
 	},
 	"keywords": [
 		"pi-package",
