@@ -341,6 +341,45 @@ test("self-check: the analyzer stays clean under its own metric", async () => {
 	}
 });
 
+test("skill documents the optional Seeds and mutation feedback contract", async () => {
+	const { readFile } = await import("node:fs/promises");
+	const skillPath = new URL(
+		"../skills/engineering/crap4ts/SKILL.md",
+		import.meta.url,
+	);
+	const skill = await readFile(skillPath.pathname, "utf8");
+	const requiredGuidance = [
+		"## Optional Seeds Handoff",
+		"## Dependency Preflight",
+		"@vitest/coverage-v8",
+		"@stryker-mutator/core",
+		"Ask Dave before installing",
+		"target repository's package manager",
+		"reporting remains read-only",
+		"No coverage",
+		"return to characterization",
+		"Covered survivor",
+		"Equivalent",
+		"Killed",
+		"Never claim an unavailable",
+		"seeds-architecture-review",
+		"Use a plain issue for one function",
+		"Detect its package manager from the lockfile",
+		"headline mutation score",
+		"covered-only score",
+		"whole-file percentage",
+		"target repository",
+		"Never copy",
+		"Multi-function or multi-module",
+	];
+	for (const guidance of requiredGuidance) {
+		assert.ok(
+			skill.includes(guidance),
+			`missing workflow guidance: ${guidance}`,
+		);
+	}
+});
+
 test("temporary-file smoke: analyzeSource works on real files", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-test-`);
 	const file = resolve(dir, "tmp.ts");
