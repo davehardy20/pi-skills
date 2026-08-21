@@ -9,6 +9,21 @@ export const SOURCE_EXTENSIONS: Set<string>;
 /** Directory names excluded from source discovery. */
 export const EXCLUDED_DIRS: Set<string>;
 
+export type CliParseResult =
+	| { kind: "help" }
+	| { kind: "error"; message: string }
+	| {
+			kind: "run";
+			failOver: number | null;
+			useChanged: boolean;
+			noCoverage: boolean;
+			coverageCommand: string | null;
+			fragments: string[];
+	  };
+
+/** Parses CLI arguments without performing I/O or exiting the process. */
+export function parseCliArgs(args: string[]): CliParseResult;
+
 /** True when a file name matches generated/config/test patterns. */
 export function shouldExcludeFile(fileName: string): boolean;
 

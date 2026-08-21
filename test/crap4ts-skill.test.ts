@@ -16,6 +16,7 @@ import {
 	functionCoverage,
 	matchStatements,
 	ownFunctionSpans,
+	parseCliArgs,
 	parseCoverageData,
 	SOURCE_EXTENSIONS,
 	shouldExcludeFile,
@@ -324,6 +325,8 @@ test("shouldExcludeFile filters generated, config, and test files", () => {
 });
 
 test("self-check: the analyzer stays clean under its own metric", async () => {
+	// Stryker instrumentation intentionally inflates this source-level metric.
+	if (process.env.STRYKER_MUTATOR_WORKER !== undefined) return;
 	// Analyze the analyzer with its own complexity rules (no coverage).
 	const path = new URL(
 		"../skills/engineering/crap4ts/scripts/crap4ts.mjs",
@@ -486,12 +489,244 @@ async function createTempProject(): Promise<string> {
 	return dir;
 }
 
-function runCli(dir: string, ...args: string[]) {
-	return spawnSync(process.execPath, [SCRIPT_PATH, ...args], {
+function runCliAt(scriptPath: string, dir: string, ...args: string[]) {
+	const activeMutant = (
+		globalThis as typeof globalThis & {
+			__stryker__?: { activeMutant?: string };
+		}
+	).__stryker__?.activeMutant;
+	const env =
+		activeMutant === undefined
+			? process.env
+			: { ...process.env, __STRYKER_ACTIVE_MUTANT__: activeMutant };
+	return spawnSync(process.execPath, [scriptPath, ...args], {
 		cwd: dir,
 		encoding: "utf8",
+		env,
 	});
 }
+
+function runCli(dir: string, ...args: string[]) {
+	return runCliAt(SCRIPT_PATH, dir, ...args);
+}
+
+async function writePartialCoverageCommand(dir: string): Promise<void> {
+	await writeFile(
+		join(dir, "seed-coverage.cjs"),
+		'const fs = require("node:fs");\n' +
+			'fs.mkdirSync("coverage", { recursive: true });\n' +
+			'fs.writeFileSync("coverage/coverage-final.json", JSON.stringify({\n' +
+			'  [process.cwd() + "/src/core.ts"]: {\n' +
+			"    statementMap: {\n" +
+			"      0: { start: { line: 1 }, end: { line: 1 } },\n" +
+			"      1: { start: { line: 2 }, end: { line: 2 } },\n" +
+			"      2: { start: { line: 3 }, end: { line: 3 } },\n" +
+			"      3: { start: { line: 4 }, end: { line: 4 } },\n" +
+			"      4: { start: { line: 5 }, end: { line: 5 } },\n" +
+			"    },\n" +
+			"    s: { 0: 1, 1: 0, 2: 1, 3: 0, 4: 1 },\n" +
+			"  },\n" +
+			"}));\n",
+		"utf8",
+	);
+}
+
+test("parseCliArgs returns explicit help, error, and run results", () => {
+	for (const flag of ["--help", "-h"]) {
+		assert.deepEqual(parseCliArgs([flag]), { kind: "help" });
+	}
+	assert.deepEqual(parseCliArgs([]), {
+		kind: "run",
+		failOver: null,
+		useChanged: false,
+		noCoverage: false,
+		coverageCommand: null,
+		fragments: [],
+	});
+	assert.deepEqual(parseCliArgs(["--fail-over"]), {
+		kind: "error",
+		message: "crap4ts: --fail-over requires a numeric argument\n",
+	});
+	assert.deepEqual(parseCliArgs(["--coverage-command"]), {
+		kind: "error",
+		message: "crap4ts: --coverage-command requires an argument\n",
+	});
+	assert.deepEqual(parseCliArgs(["--bogus"]), {
+		kind: "error",
+		message: "crap4ts: unknown option '--bogus'\n",
+	});
+	assert.deepEqual(
+		parseCliArgs([
+			"--changed",
+			"--no-coverage",
+			"--fail-over",
+			"12",
+			"--coverage-command",
+			"node coverage.cjs",
+			"src",
+			"lib",
+		]),
+		{
+			kind: "run",
+			failOver: 12,
+			useChanged: true,
+			noCoverage: true,
+			coverageCommand: "node coverage.cjs",
+			fragments: ["src", "lib"],
+		},
+	);
+});
+
+test("CLI characterization: help exits before project preflight", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-help-`);
+	try {
+		for (const flag of ["--help", "-h"]) {
+			const result = runCli(dir, flag);
+			assert.equal(result.status, 0, result.stderr);
+			assert.match(
+				result.stdout,
+				/^usage: crap4ts\.mjs \[options\] \[path-fragment \.\.\.\]/,
+			);
+			assert.match(
+				result.stdout,
+				/exit codes: 0 ok, 1 usage error, 2 threshold exceeded/,
+			);
+			assert.equal(result.stderr, "");
+		}
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI characterization: value options fail closed", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-options-`);
+	try {
+		for (const args of [["--fail-over"], ["--fail-over", "not-a-number"]]) {
+			const result = runCli(dir, ...args);
+			assert.equal(result.status, 1);
+			assert.equal(
+				result.stderr,
+				"crap4ts: --fail-over requires a numeric argument\n",
+			);
+			assert.equal(result.stdout, "");
+		}
+
+		const missingCoverageCommand = runCli(dir, "--coverage-command");
+		assert.equal(missingCoverageCommand.status, 1);
+		assert.equal(
+			missingCoverageCommand.stderr,
+			"crap4ts: --coverage-command requires an argument\n",
+		);
+		assert.equal(missingCoverageCommand.stdout, "");
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI characterization: no matches exit before coverage", async () => {
+	const dir = await createTempProject();
+	try {
+		const result = runCli(
+			dir,
+			"missing-fragment",
+			"--coverage-command",
+			"node definitely-should-not-run.cjs",
+		);
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(result.stdout, "crap4ts: no matching source files\n");
+		assert.equal(result.stderr, "");
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI characterization: missing project and TypeScript fail closed", async () => {
+	const emptyDir = await mkdtemp(`${tmpdir()}/crap4ts-no-project-`);
+	const isolatedDir = await mkdtemp(`${tmpdir()}/crap4ts-no-typescript-`);
+	const { copyFile, mkdir, realpath, rm } = await import("node:fs/promises");
+	try {
+		const missingProject = runCli(emptyDir, "--no-coverage");
+		assert.equal(missingProject.status, 1);
+		assert.equal(missingProject.stdout, "");
+		assert.equal(
+			missingProject.stderr,
+			"crap4ts: run from a project root containing package.json\n",
+		);
+
+		await mkdir(join(isolatedDir, "src"), { recursive: true });
+		await writeFile(
+			join(isolatedDir, "package.json"),
+			JSON.stringify({ name: "fixture", private: true }),
+			"utf8",
+		);
+		const isolatedScript = join(isolatedDir, "crap4ts.mjs");
+		await copyFile(SCRIPT_PATH, isolatedScript);
+		const missingTypeScript = runCliAt(
+			await realpath(isolatedScript),
+			isolatedDir,
+			"--no-coverage",
+		);
+		assert.equal(missingTypeScript.status, 1);
+		assert.equal(missingTypeScript.stdout, "");
+		assert.equal(
+			missingTypeScript.stderr,
+			"crap4ts: typescript not found — install it as a devDependency in the target project\n",
+		);
+	} finally {
+		await rm(emptyDir, { recursive: true, force: true });
+		await rm(isolatedDir, { recursive: true, force: true });
+	}
+});
+
+test("CLI characterization: path fragments use any-match filtering", async () => {
+	const dir = await createTempProject();
+	try {
+		await writeFile(
+			join(dir, "src", "other.ts"),
+			"export function other(): number { return 1; }\n",
+			"utf8",
+		);
+		const result = runCli(dir, "--no-coverage", "missing-fragment", "src/core");
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /risky\s+src\/core\.ts/);
+		assert.ok(!result.stdout.includes("other"));
+		assert.equal(result.stderr, "");
+
+		if (process.platform !== "win32") {
+			await writeFile(
+				join(dir, "src", "slash\\name.ts"),
+				"export function slashed(): number { return 1; }\n",
+				"utf8",
+			);
+			const normalized = runCli(dir, "--no-coverage", "src/slash/name");
+			assert.equal(normalized.status, 0, normalized.stderr);
+			assert.match(normalized.stdout, /slashed/);
+		}
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI characterization: unreadable files warn and do not abort", async () => {
+	const dir = await createTempProject();
+	const unreadable = join(dir, "src", "unreadable.ts");
+	const { chmod, rm } = await import("node:fs/promises");
+	try {
+		if (process.platform === "win32" || process.getuid?.() === 0) return;
+		await writeFile(unreadable, "export const hidden = 1;\n", "utf8");
+		await chmod(unreadable, 0o000);
+		const result = runCli(dir, "--no-coverage");
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /risky\s+src\/core\.ts/);
+		assert.match(result.stderr, /crap4ts: skipping src\/unreadable\.ts:/);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
 
 test("CLI smoke: --no-coverage prints report and exits 0 under high threshold", async () => {
 	const dir = await createTempProject();
@@ -500,6 +735,7 @@ test("CLI smoke: --no-coverage prints report and exits 0 under high threshold", 
 		assert.equal(result.status, 0, result.stderr);
 		assert.match(result.stdout, /^CRAP Report$/m);
 		assert.match(result.stdout, /risky\s+src\/core\.ts\s+4\s+N\/A\s+N\/A/);
+		assert.equal(result.stderr, "");
 	} finally {
 		const { rm } = await import("node:fs/promises");
 		await rm(dir, { recursive: true, force: true });
@@ -517,29 +753,28 @@ test("CLI smoke: N/A coverage never breaches the --fail-over gate", async () => 
 	}
 });
 
+test("CLI characterization: coverage runs unless explicitly disabled", async () => {
+	const dir = await createTempProject();
+	try {
+		const result = runCli(dir);
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /risky\s+src\/core\.ts\s+4\s+N\/A\s+N\/A/);
+		assert.equal(
+			result.stderr,
+			"crap4ts: no coverage runner found (test:coverage script, vitest, or jest); reporting coverage as N/A\n",
+		);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("CLI smoke: --fail-over exits 2 with coverage via --coverage-command", async () => {
 	const dir = await createTempProject();
 	try {
 		// Seed a fake coverage runner that writes coverage-final.json marking
 		// risky() partially covered, then gate on a low threshold.
-		await writeFile(
-			join(dir, "seed-coverage.cjs"),
-			'const fs = require("node:fs");\n' +
-				'fs.mkdirSync("coverage", { recursive: true });\n' +
-				'fs.writeFileSync("coverage/coverage-final.json", JSON.stringify({\n' +
-				'  [process.cwd() + "/src/core.ts"]: {\n' +
-				"    statementMap: {\n" +
-				"      0: { start: { line: 1 }, end: { line: 1 } },\n" +
-				"      1: { start: { line: 2 }, end: { line: 2 } },\n" +
-				"      2: { start: { line: 3 }, end: { line: 3 } },\n" +
-				"      3: { start: { line: 4 }, end: { line: 4 } },\n" +
-				"      4: { start: { line: 5 }, end: { line: 5 } },\n" +
-				"    },\n" +
-				"    s: { 0: 1, 1: 0, 2: 1, 3: 0, 4: 1 },\n" +
-				"  },\n" +
-				"}));\n",
-			"utf8",
-		);
+		await writePartialCoverageCommand(dir);
 		const result = runCli(
 			dir,
 			"--coverage-command",
@@ -550,6 +785,20 @@ test("CLI smoke: --fail-over exits 2 with coverage via --coverage-command", asyn
 		assert.equal(result.status, 2, result.stderr);
 		assert.match(result.stdout, /risky\s+src\/core\.ts\s+4\s+60\.0%\s+5\.0/);
 		assert.match(result.stderr, /exceed CRAP 1/);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI characterization: coverage without a threshold exits 0", async () => {
+	const dir = await createTempProject();
+	try {
+		await writePartialCoverageCommand(dir);
+		const result = runCli(dir, "--coverage-command", "node seed-coverage.cjs");
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /risky\s+src\/core\.ts\s+4\s+60\.0%\s+5\.0/);
+		assert.equal(result.stderr, "");
 	} finally {
 		const { rm } = await import("node:fs/promises");
 		await rm(dir, { recursive: true, force: true });
