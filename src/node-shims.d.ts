@@ -99,6 +99,7 @@ declare module "node:test" {
 
 declare const process: {
 	execPath: string;
+	argv: string[];
 	platform: string;
 	env: Record<string, string | undefined>;
 	getuid?: () => number;
