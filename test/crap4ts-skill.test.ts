@@ -532,6 +532,23 @@ async function writePartialCoverageCommand(dir: string): Promise<void> {
 	);
 }
 
+async function writeAmbiguousCoverageCommand(dir: string): Promise<void> {
+	await writeFile(
+		join(dir, "seed-ambiguous-coverage.cjs"),
+		'const fs = require("node:fs");\n' +
+			'fs.mkdirSync("coverage", { recursive: true });\n' +
+			"const entry = {\n" +
+			"  statementMap: { 0: { start: { line: 1 }, end: { line: 1 } } },\n" +
+			"  s: { 0: 1 },\n" +
+			"};\n" +
+			'fs.writeFileSync("coverage/coverage-final.json", JSON.stringify({\n' +
+			'  "/fixture-a/src/ambiguous-main.ts": entry,\n' +
+			'  "/fixture-b/src/ambiguous-main.ts": entry,\n' +
+			"}));\n",
+		"utf8",
+	);
+}
+
 function captureMain(dir: string, args: string[] | undefined) {
 	let stdout = "";
 	let stderr = "";
@@ -697,6 +714,25 @@ test("main runs analysis and threshold paths in process", async () => {
 			/risky\s+src\/core\.ts\s+4\s+60\.0%\s+5\.0/,
 		);
 		assert.equal(coverageOnly.stderr, "");
+
+		await writeFile(
+			join(dir, "src", "ambiguous-main.ts"),
+			"export function ambiguousMain(): number { return 1; }\n",
+			"utf8",
+		);
+		await writeAmbiguousCoverageCommand(dir);
+		const ambiguous = runMainInProcess(
+			dir,
+			"--coverage-command",
+			"node seed-ambiguous-coverage.cjs",
+			"ambiguous-main",
+		);
+		assert.equal(ambiguous.status, 0);
+		assert.match(ambiguous.stdout, /ambiguousMain/);
+		assert.equal(
+			ambiguous.stderr,
+			"crap4ts: ambiguous coverage match for src/ambiguous-main.ts (2 files); reporting N/A\n",
+		);
 		const threshold = runMainInProcess(
 			dir,
 			"--coverage-command",

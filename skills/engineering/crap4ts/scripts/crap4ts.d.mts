@@ -125,6 +125,7 @@ export function ownFunctionSpans(
 export function matchStatements(
 	absoluteFilePath: string,
 	coverageMap: CoverageMap,
+	stderr?: TextSink,
 ): { statements: StatementRange[]; functions: FunctionSpan[] } | null;
 
 /** One report row: CRAP score and inputs for a function. */
@@ -148,6 +149,7 @@ export function buildRows(
 	functions: CrapFunction[],
 	coverageMap: CoverageMap | null,
 	rootDir: string,
+	stderr?: TextSink,
 ): CrapRow[];
 
 /** Sorts rows worst CRAP first; N/A coverage at the bottom. */

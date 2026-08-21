@@ -396,7 +396,11 @@ const warnedSuffixes = new Set();
 
 // Exact path match first; unique path-suffix match second (like crap4go).
 // Path handling is POSIX-only; see Environment Notes in SKILL.md.
-export function matchStatements(absoluteFilePath, coverageMap) {
+export function matchStatements(
+	absoluteFilePath,
+	coverageMap,
+	stderr = process.stderr,
+) {
 	if (coverageMap.has(absoluteFilePath))
 		return coverageMap.get(absoluteFilePath);
 	const suffix = absoluteFilePath.split("/").slice(-2).join("/");
@@ -407,7 +411,7 @@ export function matchStatements(absoluteFilePath, coverageMap) {
 	if (candidates.length === 1) return coverageMap.get(candidates[0]);
 	if (candidates.length > 1 && !warnedSuffixes.has(suffix)) {
 		warnedSuffixes.add(suffix);
-		process.stderr.write(
+		stderr.write(
 			`crap4ts: ambiguous coverage match for ${suffix} (${candidates.length} files); reporting N/A\n`,
 		);
 	}
@@ -416,11 +420,18 @@ export function matchStatements(absoluteFilePath, coverageMap) {
 
 // ---- Report ----
 
-export function buildRows(functions, coverageMap, rootDir) {
+export function buildRows(
+	functions,
+	coverageMap,
+	rootDir,
+	stderr = process.stderr,
+) {
 	const rows = [];
 	for (const fn of functions) {
 		const absPath = resolve(rootDir, fn.file);
-		const entry = coverageMap ? matchStatements(absPath, coverageMap) : null;
+		const entry = coverageMap
+			? matchStatements(absPath, coverageMap, stderr)
+			: null;
 		const coverage = functionCoverage(
 			fn,
 			entry?.statements ?? null,
@@ -783,7 +794,7 @@ export function main(
 		}
 	}
 
-	const rows = sortRows(buildRows(functions, coverageMap, rootDir));
+	const rows = sortRows(buildRows(functions, coverageMap, rootDir, stderr));
 	stdout.write(`${formatReport(rows)}\n`);
 
 	if (failOver != null) {
