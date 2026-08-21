@@ -372,6 +372,9 @@ test("skill documents the optional Seeds and mutation feedback contract", async 
 		"never claim the gate passed",
 		"seeds-architecture-review",
 		"Use a plain issue for one function",
+		"Seeds tooling is unavailable",
+		"Ask Dave before initializing Seeds",
+		"remain in report-only mode",
 		"Detect its package manager from the lockfile",
 		"`packageManager`",
 		"workspace metadata",
@@ -382,6 +385,10 @@ test("skill documents the optional Seeds and mutation feedback contract", async 
 		"whole-file percentage",
 		"target repository",
 		"Never copy",
+		"preserve it",
+		"never lower it",
+		"invocation-specific or temporary configuration",
+		"Closure still requires the shared gate",
 		"Multi-function or multi-module",
 	];
 	for (const guidance of requiredGuidance) {

@@ -162,8 +162,9 @@ function-improvement pass; mutation testing is required within that pass.
 
 1. **Triage** — run `crap4ts.mjs path/fragment`, then pick one function using
    its score plus engineering judgment.
-2. **Optional handoff** — when Dave chooses to improve that function, create one
-   plain Seeds issue with its baseline and acceptance criteria.
+2. **Optional handoff** — when Dave chooses to improve that function, follow the
+   Seeds availability fallback below, then create one plain issue with its
+   baseline and acceptance criteria.
 3. **Characterize** — add tests that capture current observable behavior
    (Feathers).
 4. **Mutation-check** — run the required, file-scoped Stryker check and follow
@@ -183,6 +184,12 @@ package metadata by default. A coverage-enabled run is not filesystem-read-only:
 the analyzer deletes and recreates `coverage/` before reporting. Use
 `--no-coverage` as the filesystem-read-only path when N/A coverage and CRAP are
 acceptable.
+
+Before an improvement pass, check that Seeds tooling is available and the target
+repository is initialized. If Seeds tooling is unavailable or the project is not
+initialized, tell Dave. Ask Dave before initializing Seeds; if it cannot or
+should not be used, remain in report-only mode and do not refactor. Never
+initialize Seeds silently.
 
 Do not create issues merely because a report contains high scores. When Dave
 selects a function for improvement, create one plain Seeds issue and record
@@ -228,9 +235,13 @@ behavior begins surviving. Closure therefore requires the target function's
 meaningful survivor set to hold, not merely the aggregate percentage.
 
 Treat `thresholds.break` as a repository-specific regression floor, not a
-universal target. Run a baseline in the **target repository**, set the floor just
-below its headline score, and ratchet upward only after verified improvement.
-**Never copy** another repository's numeric threshold.
+universal target. If the target repository has no floor, run its baseline and set
+one just below its headline score. If a shared floor already exists, preserve it
+and never lower it to accommodate a weaker file-scoped baseline. Keep any lower
+selected-file baseline in invocation-specific or temporary configuration that
+does not weaken the shared floor. Closure still requires the shared gate to pass.
+Ratchet the shared floor upward only after verified improvement. **Never copy**
+another repository's numeric threshold.
 
 If Stryker is unavailable and adding it is not authorized, record mutation as
 unavailable and do not claim the mutation gate passed. Characterization may
