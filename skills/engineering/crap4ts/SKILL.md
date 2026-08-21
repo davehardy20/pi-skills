@@ -118,8 +118,10 @@ change the code safely. When coverage is unknown, act as if it were absent.
 
 ## Dependency Preflight
 
-Before running coverage or mutation testing, inspect the target repository rather
-than assuming packages are available:
+This is an agent-run, consent-gated preflight. `crap4ts.mjs` remains
+analysis-only and must never install dependencies. Before running coverage or
+mutation testing, inspect the target repository rather than assuming packages
+are available:
 
 1. Detect its package manager from the lockfile (`pnpm`, `yarn`, `bun`, else
    `npm`).
@@ -129,7 +131,7 @@ than assuming packages are available:
      `@vitest/coverage-v8` or `@vitest/coverage-istanbul`, compatible with the
      installed Vitest version);
    - `@stryker-mutator/core` plus the matching local test-runner plugin and a
-     usable Stryker configuration when mutation testing is requested.
+     usable Stryker configuration for a function-improvement pass.
 3. Report the exact missing or incompatible dev dependencies before mutation.
 
 **Ask Dave before installing** or changing `package.json`, a lockfile, scripts, or
@@ -137,9 +139,11 @@ configuration. After approval, install compatible dev dependencies with the
 target repository's package manager, inspect the manifest/lockfile diff, then
 rerun the preflight. Never satisfy the check with a global Stryker install.
 
-If installation is declined, use `--no-coverage` only when a CRAP-only report is
-still useful, report coverage/CRAP as N/A where appropriate, and mark mutation as
-unavailable. Never claim an unavailable coverage or mutation gate passed.
+For report-only CRAP use, installation may be declined and `--no-coverage` may
+still produce a useful N/A report. Once Dave opts into a function-improvement
+pass, mutation testing is required before refactoring. If its local tooling is
+not authorized, mark mutation unavailable, never claim the gate passed, and
+defer the refactor.
 
 ## Recommended Workflow
 
@@ -149,14 +153,17 @@ changes. Their rankings may disagree. That disagreement identifies the lever:
 reduce complexity in high-CRAP functions, or strengthen observations where
 covered mutants survive.
 
+Report-only use stops after triage. Steps 2–6 apply only after Dave opts into a
+function-improvement pass; mutation testing is required within that pass.
+
 1. **Triage** — run `crap4ts.mjs path/fragment`, then pick one function using
    its score plus engineering judgment.
 2. **Optional handoff** — when Dave chooses to improve that function, create one
    plain Seeds issue with its baseline and acceptance criteria.
 3. **Characterize** — add tests that capture current observable behavior
    (Feathers).
-4. **Mutation-check** — run Stryker against the chosen file and follow the
-   feedback loop below until the safety net is credible.
+4. **Mutation-check** — run the required, file-scoped Stryker check and follow
+   the feedback loop below until the safety net is credible.
 5. **Refactor** — reduce the selected function's complexity (Ch 3), one function
    per pass.
 6. **Verify and close** — rerun CRAP, mutation testing, and the normal suite.
@@ -216,8 +223,9 @@ below its headline score, and ratchet upward only after verified improvement.
 **Never copy** another repository's numeric threshold.
 
 If Stryker is unavailable and adding it is not authorized, record mutation as
-unavailable; do not claim the mutation gate passed. Ask Dave whether to install
-the local tooling, continue characterization only, or defer the refactor.
+unavailable and do not claim the mutation gate passed. Characterization may
+continue, but the function-improvement pass cannot advance to refactoring or
+closure.
 
 ## Environment Notes
 

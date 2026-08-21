@@ -355,13 +355,19 @@ test("skill documents the optional Seeds and mutation feedback contract", async 
 		"@stryker-mutator/core",
 		"Ask Dave before installing",
 		"target repository's package manager",
+		"agent-run, consent-gated preflight",
+		"`crap4ts.mjs` remains",
+		"must never install dependencies",
+		"Report-only use stops after triage",
+		"mutation testing is required",
 		"reporting remains read-only",
 		"No coverage",
 		"return to characterization",
 		"Covered survivor",
 		"Equivalent",
 		"Killed",
-		"Never claim an unavailable",
+		"mark mutation unavailable",
+		"never claim the gate passed",
 		"seeds-architecture-review",
 		"Use a plain issue for one function",
 		"Detect its package manager from the lockfile",
@@ -376,6 +382,27 @@ test("skill documents the optional Seeds and mutation feedback contract", async 
 		assert.ok(
 			skill.includes(guidance),
 			`missing workflow guidance: ${guidance}`,
+		);
+	}
+});
+
+test("crap4ts runtime never installs dependencies", async () => {
+	const { readFile } = await import("node:fs/promises");
+	const scriptPath = new URL(
+		"../skills/engineering/crap4ts/scripts/crap4ts.mjs",
+		import.meta.url,
+	);
+	const script = await readFile(scriptPath.pathname, "utf8");
+	for (const forbidden of [
+		"npm install",
+		"npm i ",
+		"pnpm add",
+		"yarn add",
+		"bun add",
+	]) {
+		assert.ok(
+			!script.includes(forbidden),
+			`runtime must not install dependencies: ${forbidden}`,
 		);
 	}
 });
