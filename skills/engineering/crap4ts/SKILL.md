@@ -123,16 +123,20 @@ analysis-only and must never install dependencies. Before running coverage or
 mutation testing, inspect the target repository rather than assuming packages
 are available:
 
-1. Detect its package manager from the lockfile (`pnpm`, `yarn`, `bun`, else
+1. Detect its package manager from the lockfile (`pnpm`, `yarn`, `bun`, or
    `npm`).
-2. Check both the manifest and local module resolution for:
+2. If no lockfile exists, inspect `package.json`'s `packageManager` field and
+   relevant workspace metadata; only then fall back to `npm`.
+3. If those sources disagree, stop and ask Dave rather than installing or
+   creating/replacing a lockfile.
+4. Check both the manifest and local module resolution for:
    - `typescript` plus an existing coverage runner;
    - the coverage provider required by that runner (for Vitest, commonly
      `@vitest/coverage-v8` or `@vitest/coverage-istanbul`, compatible with the
      installed Vitest version);
    - `@stryker-mutator/core` plus the matching local test-runner plugin and a
      usable Stryker configuration for a function-improvement pass.
-3. Report the exact missing or incompatible dev dependencies before mutation.
+5. Report the exact missing or incompatible dev dependencies before mutation.
 
 **Ask Dave before installing** or changing `package.json`, a lockfile, scripts, or
 configuration. After approval, install compatible dev dependencies with the
