@@ -24,7 +24,11 @@ declare module "node:child_process" {
 	export function spawnSync(
 		command: string,
 		args: string[],
-		options: { cwd: string; encoding: "utf8" },
+		options: {
+			cwd: string;
+			encoding: "utf8";
+			env?: Record<string, string | undefined>;
+		},
 	): { status: number | null; stdout: string; stderr: string };
 }
 
@@ -57,6 +61,7 @@ declare module "node:fs/promises" {
 		options?: { withFileTypes?: false },
 	): Promise<string[]>;
 	export function readFile(path: string, encoding: "utf8"): Promise<string>;
+	export function realpath(path: string): Promise<string>;
 	export function rm(
 		path: string,
 		options?: { recursive?: boolean; force?: boolean },
@@ -94,6 +99,8 @@ declare module "node:test" {
 
 declare const process: {
 	execPath: string;
+	platform: string;
+	env: Record<string, string | undefined>;
 	getuid?: () => number;
 	stdout: { write(chunk: string): boolean };
 	stderr: { write(chunk: string): boolean };

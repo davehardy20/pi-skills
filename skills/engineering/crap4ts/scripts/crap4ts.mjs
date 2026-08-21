@@ -662,8 +662,7 @@ exit codes: 0 ok, 1 usage error, 2 threshold exceeded
 `);
 }
 
-function main() {
-	const args = process.argv.slice(2);
+export function parseCliArgs(args) {
 	let failOver = null;
 	let useChanged = false;
 	let noCoverage = false;
@@ -673,15 +672,15 @@ function main() {
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i];
 		if (arg === "--help" || arg === "-h") {
-			printUsage();
-			process.exit(0);
-		} else if (arg === "--fail-over") {
+			return { kind: "help" };
+		}
+		if (arg === "--fail-over") {
 			failOver = Number(args[i + 1]);
 			if (!Number.isFinite(failOver)) {
-				process.stderr.write(
-					"crap4ts: --fail-over requires a numeric argument\n",
-				);
-				process.exit(1);
+				return {
+					kind: "error",
+					message: "crap4ts: --fail-over requires a numeric argument\n",
+				};
 			}
 			i += 1;
 		} else if (arg === "--changed") {
@@ -691,19 +690,43 @@ function main() {
 		} else if (arg === "--coverage-command") {
 			coverageCommand = args[i + 1];
 			if (!coverageCommand) {
-				process.stderr.write(
-					"crap4ts: --coverage-command requires an argument\n",
-				);
-				process.exit(1);
+				return {
+					kind: "error",
+					message: "crap4ts: --coverage-command requires an argument\n",
+				};
 			}
 			i += 1;
 		} else if (arg.startsWith("--")) {
-			process.stderr.write(`crap4ts: unknown option '${arg}'\n`);
-			process.exit(1);
+			return {
+				kind: "error",
+				message: `crap4ts: unknown option '${arg}'\n`,
+			};
 		} else {
 			fragments.push(arg);
 		}
 	}
+
+	return {
+		kind: "run",
+		failOver,
+		useChanged,
+		noCoverage,
+		coverageCommand,
+		fragments,
+	};
+}
+
+function main() {
+	const cli = parseCliArgs(process.argv.slice(2));
+	if (cli.kind === "help") {
+		printUsage();
+		process.exit(0);
+	}
+	if (cli.kind === "error") {
+		process.stderr.write(cli.message);
+		process.exit(1);
+	}
+	const { failOver, useChanged, noCoverage, coverageCommand, fragments } = cli;
 
 	const rootDir = process.cwd();
 	let pkg = null;
