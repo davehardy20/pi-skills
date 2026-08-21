@@ -34,7 +34,7 @@ Local Pi skills package for Dave's workflow.
 - `thermo-nuclear-code-quality-review` — runs an intentionally strict
   maintainability review for abstraction quality, file sprawl, spaghetti
   branching, and missed simplification opportunities.
-- `crap4ts` — CRAP metric (originally Change Risk Analysis and Predictions,
+- `crap4ts` — CRAP metric (originally Change Risk Analysis and Prediction,
   later reframed as Change Risk Anti-Patterns;
   `CC² × (1 − coverage)³ + CC`) for JavaScript/TypeScript: runs the target
   project's Istanbul coverage, extracts cyclomatic complexity via the

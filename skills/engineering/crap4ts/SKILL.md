@@ -16,7 +16,7 @@ metadata:
 
 ## Lineage
 
-CRAP was introduced as **Change Risk Analysis and Predictions** and later
+CRAP was introduced as **Change Risk Analysis and Prediction** and later
 reframed by crap4j as **Change Risk Anti-Patterns**. Its formula,
 `CC² × (1 − coverage)³ + CC`, was developed by Alberto Savoia with his
 AgitarLabs colleague Bob Evans. Robert C. Martin later implemented and

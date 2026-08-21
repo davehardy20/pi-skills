@@ -1,6 +1,6 @@
 # Attribution
 
-The CRAP metric was introduced as **Change Risk Analysis and Predictions** and
+The CRAP metric was introduced as **Change Risk Analysis and Prediction** and
 later reframed by crap4j as **Change Risk Anti-Patterns**. Alberto Savoia,
 working with his AgitarLabs colleague Bob Evans, developed the formula
 `CRAP(fn) = CC² × (1 − coverage)³ + CC` circa 2007; see Savoia's Artima articles
