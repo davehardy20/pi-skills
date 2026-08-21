@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// crap4ts — CRAP (Change Risk Anti-Pattern) metric for JavaScript/TypeScript.
+// crap4ts — CRAP metric for JavaScript/TypeScript.
 //
-// Independent implementation of the CRAP formula published by Alberto Savoia and
-// Robert C. Martin (crap4j): CRAP(fn) = CC^2 x (1 - coverage)^3 + CC.
-// Modeled on the workflow of unclebob/crap4clj, crap4go, and crap4java.
+// CRAP began as Change Risk Analysis and Predictions and was later reframed by
+// crap4j as Change Risk Anti-Patterns. This independently implements the formula
+// developed by Alberto Savoia and Bob Evans:
+// CRAP(fn) = CC^2 x (1 - coverage)^3 + CC.
+// Modeled on Robert C. Martin's later crap4clj, crap4go, and crap4java workflows.
 // No code was copied from those repositories.
 //
 // Pipeline per run (mirrors the crap4* family): delete stale coverage, run the
