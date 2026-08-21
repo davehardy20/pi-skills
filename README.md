@@ -34,7 +34,8 @@ Local Pi skills package for Dave's workflow.
 - `thermo-nuclear-code-quality-review` — runs an intentionally strict
   maintainability review for abstraction quality, file sprawl, spaghetti
   branching, and missed simplification opportunities.
-- `crap4ts` — CRAP metric (Change Risk Anti-Pattern,
+- `crap4ts` — CRAP metric (originally Change Risk Analysis and Prediction,
+  later reframed as Change Risk Anti-Patterns;
   `CC² × (1 − coverage)³ + CC`) for JavaScript/TypeScript: runs the target
   project's Istanbul coverage, extracts cyclomatic complexity via the
   TypeScript compiler API, and reports the worst functions first with a
@@ -78,12 +79,11 @@ maintained by WikiProject AI Cleanup.
 local `~/.pi/agent/skills/` directory into this package so `pi install
 /Users/dave/tools/pi-skills` can manage them together.
 
-`crap4ts` independently implements the unclebob CRAP metric formula for
-JavaScript/TypeScript, modeled on the CRAP metric family (`crap4j` by
-Alberto Savoia and Robert C. Martin, plus `crap4clj`, `crap4go`, and
-`crap4java`). See
-`skills/engineering/crap4ts/ATTRIBUTION.md` for the full lineage and
-formula source.
+`crap4ts` independently implements the CRAP formula developed by Alberto
+Savoia and Bob Evans for crap4j, modeled on Robert C. Martin's later
+language-specific ports (`crap4clj`, `crap4go`, and `crap4java`). See
+`skills/engineering/crap4ts/ATTRIBUTION.md` for the full lineage and formula
+source.
 
 `opsec-framework-doc` was ported from Dave's OpenCode skill in
 `~/Desktop/opsec-framework-doc`. The Pi port preserves the template, sample

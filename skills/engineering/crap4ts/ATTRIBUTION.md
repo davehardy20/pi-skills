@@ -1,13 +1,14 @@
 # Attribution
 
-The CRAP (Change Risk Anti-Pattern) metric and formula
-`CRAP(fn) = CC² × (1 − coverage)³ + CC` were published by Alberto Savoia and
-Robert C. Martin in the **crap4j** project (circa 2006–2007; see the Artima
-articles "The C.R.A.P. Metric" and related coverage).
+The CRAP metric was introduced as **Change Risk Analysis and Prediction** and
+later reframed by crap4j as **Change Risk Anti-Patterns**. Alberto Savoia,
+working with his AgitarLabs colleague Bob Evans, developed the formula
+`CRAP(fn) = CC² × (1 − coverage)³ + CC` circa 2007; see Savoia's Artima articles
+"Pardon My French, But This Code Is C.R.A.P." and the crap4j FAQ.
 
 This skill is an **independent implementation** of that formula for
 JavaScript/TypeScript, modeled on the workflow and user experience of Robert
-C. Martin's per-language ports:
+C. Martin's later per-language ports:
 
 - [unclebob/crap4clj](https://github.com/unclebob/crap4clj) (Clojure) — the
   recommended workflow loop and per-form coverage mapping.

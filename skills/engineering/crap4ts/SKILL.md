@@ -8,30 +8,34 @@ description: >-
 metadata:
   source: >-
     Independent implementation of the CRAP formula from crap4j (Alberto Savoia
-    and Robert C. Martin), modeled on the workflow of unclebob/crap4clj,
-    crap4go, and crap4java. See ATTRIBUTION.md.
+    and Bob Evans), modeled on the later workflow ports by Robert C. Martin:
+    unclebob/crap4clj, crap4go, and crap4java. See ATTRIBUTION.md.
 ---
 
 # crap4ts — CRAP Metric for JavaScript/TypeScript
 
 ## Lineage
 
-CRAP (Change Risk Anti-Pattern) is `CC² × (1 − coverage)³ + CC`, published by
-Alberto Savoia and Robert C. Martin in the crap4j project. It is not from
-*Clean Code* itself; the book teaches the discipline the metric enforces:
+CRAP was introduced as **Change Risk Analysis and Prediction** and later
+reframed by crap4j as **Change Risk Anti-Patterns**. Its formula,
+`CC² × (1 − coverage)³ + CC`, was developed by Alberto Savoia with his
+AgitarLabs colleague Bob Evans. Robert C. Martin later implemented and
+popularized the workflow through his language-specific ports. CRAP is not from
+*Clean Code* itself; the book teaches the discipline the metric supports:
 
 - **McCabe (1976)** — cyclomatic complexity, the CC term.
 - **Feathers, *Working Effectively with Legacy Code*** — characterization
   tests, the safety net the workflow below depends on.
-- **Savoia & Martin (crap4j)** — the formula: coverage as the counterweight
+- **Savoia & Evans (crap4j)** — the formula: coverage as the counterweight
   that makes untested complexity compound.
+- **Martin (crap4clj, crap4go, crap4java)** — the modern language-port workflow.
 - **Martin, *Clean Code* (Ch 3, 9, 14, 17)** — small functions, the
   negative-indicator view of coverage ("low coverage proves you cannot change
   the code safely"), successive refinement, and smells.
 
-The port lineage is crap4j → crap4clj → crap4go → crap4java; crap4ts follows
-the same pipeline: delete stale coverage, run coverage, analyze, report
-worst-first.
+The implementation lineage is crap4j → crap4clj → crap4go → crap4java;
+crap4ts follows the same pipeline: delete stale coverage, run coverage,
+analyze, report worst-first.
 
 The core stance: the metric is triage for courage, not punishment. A function
 with CC 12 and 45% coverage is code you do not own — CRAP finds your rental
