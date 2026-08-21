@@ -24,6 +24,19 @@ export type CliParseResult =
 /** Parses CLI arguments without performing I/O or exiting the process. */
 export function parseCliArgs(args: string[]): CliParseResult;
 
+export interface TextSink {
+	write(chunk: string): unknown;
+}
+
+export interface MainOptions {
+	rootDir?: string;
+	stdout?: TextSink;
+	stderr?: TextSink;
+}
+
+/** Runs the CLI orchestration without terminating the current process. */
+export function main(args?: string[], options?: MainOptions): 0 | 1 | 2;
+
 /** True when a file name matches generated/config/test patterns. */
 export function shouldExcludeFile(fileName: string): boolean;
 

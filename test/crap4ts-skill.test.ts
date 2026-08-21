@@ -14,6 +14,7 @@ import {
 	evaluateThreshold,
 	formatReport,
 	functionCoverage,
+	main,
 	matchStatements,
 	ownFunctionSpans,
 	parseCliArgs,
@@ -531,6 +532,31 @@ async function writePartialCoverageCommand(dir: string): Promise<void> {
 	);
 }
 
+function captureMain(dir: string, args: string[] | undefined) {
+	let stdout = "";
+	let stderr = "";
+	const status = main(args, {
+		rootDir: dir,
+		stdout: {
+			write(chunk: string) {
+				stdout += chunk;
+				return true;
+			},
+		},
+		stderr: {
+			write(chunk: string) {
+				stderr += chunk;
+				return true;
+			},
+		},
+	});
+	return { status, stdout, stderr };
+}
+
+function runMainInProcess(dir: string, ...args: string[]) {
+	return captureMain(dir, args);
+}
+
 test("parseCliArgs returns explicit help, error, and run results", () => {
 	for (const flag of ["--help", "-h"]) {
 		assert.deepEqual(parseCliArgs([flag]), { kind: "help" });
@@ -575,6 +601,149 @@ test("parseCliArgs returns explicit help, error, and run results", () => {
 			fragments: ["src", "lib"],
 		},
 	);
+});
+
+test("main returns exit codes through injected I/O", async () => {
+	const emptyDir = await mkdtemp(`${tmpdir()}/crap4ts-main-empty-`);
+	try {
+		const help = runMainInProcess(emptyDir, "--help");
+		assert.equal(help.status, 0);
+		assert.match(help.stdout, /^usage: crap4ts\.mjs/);
+		assert.equal(help.stderr, "");
+
+		const unknown = runMainInProcess(emptyDir, "--bogus");
+		assert.equal(unknown.status, 1);
+		assert.equal(unknown.stdout, "");
+		assert.equal(unknown.stderr, "crap4ts: unknown option '--bogus'\n");
+
+		const missingProject = runMainInProcess(emptyDir, "--no-coverage");
+		assert.equal(missingProject.status, 1);
+		assert.equal(missingProject.stdout, "");
+		assert.equal(
+			missingProject.stderr,
+			"crap4ts: run from a project root containing package.json\n",
+		);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(emptyDir, { recursive: true, force: true });
+	}
+});
+
+test("main runs analysis and threshold paths in process", async () => {
+	const dir = await createTempProject();
+	try {
+		const report = runMainInProcess(dir, "--no-coverage");
+		assert.equal(report.status, 0, report.stderr);
+		assert.match(report.stdout, /^CRAP Report$/m);
+		assert.match(report.stdout, /risky\s+src\/core\.ts\s+4\s+N\/A\s+N\/A/);
+		assert.equal(report.stderr, "");
+
+		const highThreshold = runMainInProcess(
+			dir,
+			"--no-coverage",
+			"--fail-over",
+			"1000",
+		);
+		assert.equal(highThreshold.status, 0, highThreshold.stderr);
+		assert.equal(highThreshold.stderr, "");
+
+		const noMatches = runMainInProcess(
+			dir,
+			"missing-fragment",
+			"--no-coverage",
+		);
+		assert.equal(noMatches.status, 0, noMatches.stderr);
+		assert.equal(noMatches.stdout, "crap4ts: no matching source files\n");
+
+		await writeFile(
+			join(dir, "src", "other.ts"),
+			"export function other(): number { return 1; }\n",
+			"utf8",
+		);
+		const filtered = runMainInProcess(
+			dir,
+			"--no-coverage",
+			"missing-fragment",
+			"src/core",
+		);
+		assert.equal(filtered.status, 0, filtered.stderr);
+		assert.match(filtered.stdout, /risky\s+src\/core\.ts/);
+		assert.ok(!filtered.stdout.includes("other"));
+
+		if (process.platform !== "win32") {
+			await writeFile(
+				join(dir, "src", "slash\\name.ts"),
+				"export function slashed(): number { return 1; }\n",
+				"utf8",
+			);
+			const normalized = runMainInProcess(
+				dir,
+				"--no-coverage",
+				"src/slash/name",
+			);
+			assert.equal(normalized.status, 0, normalized.stderr);
+			assert.match(normalized.stdout, /slashed/);
+		}
+
+		await writePartialCoverageCommand(dir);
+		const coverageOnly = runMainInProcess(
+			dir,
+			"--coverage-command",
+			"node seed-coverage.cjs",
+		);
+		assert.equal(coverageOnly.status, 0, coverageOnly.stderr);
+		assert.match(
+			coverageOnly.stdout,
+			/risky\s+src\/core\.ts\s+4\s+60\.0%\s+5\.0/,
+		);
+		assert.equal(coverageOnly.stderr, "");
+		const threshold = runMainInProcess(
+			dir,
+			"--coverage-command",
+			"node seed-coverage.cjs",
+			"--fail-over",
+			"1",
+		);
+		assert.equal(threshold.status, 2);
+		assert.match(threshold.stdout, /risky\s+src\/core\.ts\s+4\s+60\.0%\s+5\.0/);
+		assert.match(threshold.stderr, /exceed CRAP 1/);
+
+		const originalArgv = process.argv;
+		try {
+			process.argv = [
+				process.execPath,
+				SCRIPT_PATH,
+				"--coverage-command",
+				"node seed-coverage.cjs",
+				"--fail-over",
+				"1",
+			];
+			const defaults = captureMain(dir, undefined);
+			assert.equal(defaults.status, 2);
+			assert.match(defaults.stderr, /exceed CRAP 1/);
+		} finally {
+			process.argv = originalArgv;
+		}
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("main reports changed-mode failures without exiting Vitest", async () => {
+	const dir = await createTempProject();
+	try {
+		const result = runMainInProcess(dir, "--changed", "--no-coverage");
+		assert.equal(result.status, 1);
+		assert.equal(result.stdout, "");
+		assert.equal(
+			result.stderr,
+			"crap4ts: --changed requires origin/main or origin/master\n",
+		);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
 });
 
 test("CLI characterization: help exits before project preflight", async () => {
@@ -723,6 +892,11 @@ test("CLI characterization: unreadable files warn and do not abort", async () =>
 		assert.equal(result.status, 0, result.stderr);
 		assert.match(result.stdout, /risky\s+src\/core\.ts/);
 		assert.match(result.stderr, /crap4ts: skipping src\/unreadable\.ts:/);
+
+		const inProcess = runMainInProcess(dir, "--no-coverage");
+		assert.equal(inProcess.status, 0, inProcess.stderr);
+		assert.match(inProcess.stdout, /risky\s+src\/core\.ts/);
+		assert.match(inProcess.stderr, /crap4ts: skipping src\/unreadable\.ts:/);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

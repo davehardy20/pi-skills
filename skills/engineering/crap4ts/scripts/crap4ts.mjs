@@ -499,10 +499,10 @@ export function detectCoverageCommand(rootDir, pkg) {
 	return null;
 }
 
-function runCoverage(rootDir, pkg, overrideCommand) {
+function runCoverage(rootDir, pkg, overrideCommand, stderr = process.stderr) {
 	const command = overrideCommand ?? detectCoverageCommand(rootDir, pkg);
 	if (!command) {
-		process.stderr.write(
+		stderr.write(
 			"crap4ts: no coverage runner found (test:coverage script, vitest, or jest); reporting coverage as N/A\n",
 		);
 		return null;
@@ -516,19 +516,19 @@ function runCoverage(rootDir, pkg, overrideCommand) {
 		timeout: 600_000,
 	});
 	if (result.error) {
-		process.stderr.write(
+		stderr.write(
 			`crap4ts: coverage command failed to start: ${result.error.message}\n`,
 		);
 		return null;
 	}
 	if (result.status !== 0) {
-		process.stderr.write(
+		stderr.write(
 			`crap4ts: coverage command exited ${result.status}; using artifacts anyway\n`,
 		);
 	}
 	const finalPath = join(coverageDir, "coverage-final.json");
 	if (!existsSync(finalPath)) {
-		process.stderr.write(
+		stderr.write(
 			`crap4ts: ${finalPath} not found; reporting coverage as N/A (the command must produce coverage/coverage-final.json)\n`,
 		);
 		return null;
@@ -536,7 +536,7 @@ function runCoverage(rootDir, pkg, overrideCommand) {
 	try {
 		return parseCoverageData(JSON.parse(readFileSync(finalPath, "utf8")));
 	} catch (error) {
-		process.stderr.write(
+		stderr.write(
 			`crap4ts: failed to parse coverage-final.json: ${error.message}\n`,
 		);
 		return null;
@@ -562,7 +562,7 @@ function collectSourceFiles(rootDir) {
 	return files;
 }
 
-function changedFiles(rootDir) {
+function changedFiles(rootDir, stderr = process.stderr) {
 	let base = null;
 	for (const candidate of ["origin/main", "origin/master"]) {
 		const check = spawnSync(
@@ -578,17 +578,15 @@ function changedFiles(rootDir) {
 		}
 	}
 	if (!base) {
-		process.stderr.write(
-			"crap4ts: --changed requires origin/main or origin/master\n",
-		);
-		process.exit(1);
+		stderr.write("crap4ts: --changed requires origin/main or origin/master\n");
+		return null;
 	}
 	const mergeBase = spawnSync("git", ["merge-base", base, "HEAD"], {
 		cwd: rootDir,
 	});
 	if (mergeBase.status !== 0 || !mergeBase.stdout?.toString().trim()) {
-		process.stderr.write(`crap4ts: git merge-base ${base} HEAD failed\n`);
-		process.exit(1);
+		stderr.write(`crap4ts: git merge-base ${base} HEAD failed\n`);
+		return null;
 	}
 	const diff = spawnSync(
 		"git",
@@ -598,8 +596,8 @@ function changedFiles(rootDir) {
 		},
 	);
 	if (diff.status !== 0) {
-		process.stderr.write("crap4ts: git diff --name-only failed\n");
-		process.exit(1);
+		stderr.write("crap4ts: git diff --name-only failed\n");
+		return null;
 	}
 	const filterSourceLines = (lines) =>
 		lines.filter(
@@ -629,8 +627,8 @@ function changedFiles(rootDir) {
 		{ cwd: rootDir },
 	);
 	if (untracked.status !== 0) {
-		process.stderr.write("crap4ts: git ls-files --others failed\n");
-		process.exit(1);
+		stderr.write("crap4ts: git ls-files --others failed\n");
+		return null;
 	}
 	return [
 		...tracked,
@@ -643,8 +641,14 @@ function changedFiles(rootDir) {
 	];
 }
 
-function printUsage() {
-	process.stdout.write(`usage: crap4ts.mjs [options] [path-fragment ...]
+function selectSourceFiles(rootDir, useChanged, stderr) {
+	return useChanged
+		? changedFiles(rootDir, stderr)
+		: collectSourceFiles(rootDir);
+}
+
+function printUsage(stdout = process.stdout) {
+	stdout.write(`usage: crap4ts.mjs [options] [path-fragment ...]
 
 Analyzes JavaScript/TypeScript source and reports CRAP scores
 (CRAP = CC^2 x (1 - coverage)^3 + CC), worst first.
@@ -716,40 +720,43 @@ export function parseCliArgs(args) {
 	};
 }
 
-function main() {
-	const cli = parseCliArgs(process.argv.slice(2));
+export function main(
+	args = process.argv.slice(2),
+	{
+		rootDir = process.cwd(),
+		stdout = process.stdout,
+		stderr = process.stderr,
+	} = {},
+) {
+	const cli = parseCliArgs(args);
 	if (cli.kind === "help") {
-		printUsage();
-		process.exit(0);
+		printUsage(stdout);
+		return 0;
 	}
 	if (cli.kind === "error") {
-		process.stderr.write(cli.message);
-		process.exit(1);
+		stderr.write(cli.message);
+		return 1;
 	}
 	const { failOver, useChanged, noCoverage, coverageCommand, fragments } = cli;
 
-	const rootDir = process.cwd();
 	let pkg = null;
 	try {
 		pkg = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
 	} catch {
-		process.stderr.write(
-			"crap4ts: run from a project root containing package.json\n",
-		);
-		process.exit(1);
+		stderr.write("crap4ts: run from a project root containing package.json\n");
+		return 1;
 	}
 
 	let ts;
 	try {
 		ts = loadTypeScript(rootDir);
 	} catch (error) {
-		process.stderr.write(`crap4ts: ${error.message}\n`);
-		process.exit(1);
+		stderr.write(`crap4ts: ${error.message}\n`);
+		return 1;
 	}
 
-	const files = useChanged
-		? changedFiles(rootDir)
-		: collectSourceFiles(rootDir);
+	const files = selectSourceFiles(rootDir, useChanged, stderr);
+	if (files === null) return 1;
 	const filtered = fragments.length
 		? files.filter((file) => {
 				const rel = relative(rootDir, file).split("\\").join("/");
@@ -757,13 +764,13 @@ function main() {
 			})
 		: files;
 	if (filtered.length === 0) {
-		process.stdout.write("crap4ts: no matching source files\n");
-		process.exit(0);
+		stdout.write("crap4ts: no matching source files\n");
+		return 0;
 	}
 
 	const coverageMap = noCoverage
 		? null
-		: runCoverage(rootDir, pkg, coverageCommand);
+		: runCoverage(rootDir, pkg, coverageCommand, stderr);
 
 	const functions = [];
 	for (const file of filtered) {
@@ -772,27 +779,28 @@ function main() {
 			const text = readFileSync(file, "utf8");
 			functions.push(...analyzeSource(ts, rel, text));
 		} catch (error) {
-			process.stderr.write(`crap4ts: skipping ${rel}: ${error.message}\n`);
+			stderr.write(`crap4ts: skipping ${rel}: ${error.message}\n`);
 		}
 	}
 
 	const rows = sortRows(buildRows(functions, coverageMap, rootDir));
-	process.stdout.write(`${formatReport(rows)}\n`);
+	stdout.write(`${formatReport(rows)}\n`);
 
 	if (failOver != null) {
 		const exceeded = evaluateThreshold(rows, failOver);
 		if (exceeded.length > 0) {
-			process.stderr.write(
+			stderr.write(
 				`crap4ts: ${exceeded.length} function(s) exceed CRAP ${failOver}\n`,
 			);
-			process.exit(2);
+			return 2;
 		}
 	}
+	return 0;
 }
 
 const invokedDirectly =
 	process.argv[1] &&
 	pathToFileURL(process.argv[1]).href === new URL(import.meta.url).href;
 if (invokedDirectly) {
-	main();
+	process.exitCode = main();
 }
