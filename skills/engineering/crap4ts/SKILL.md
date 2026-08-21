@@ -178,9 +178,15 @@ One function per pass — Ch 12's simple-design discipline, not batch refactors.
 
 ## Optional Seeds Handoff
 
-CRAP reporting remains read-only by default. Do not create issues merely because
-a report contains high scores. When Dave selects a function for improvement,
-create one plain Seeds issue and record before/after values for:
+Report-only use does not create Seeds issues or modify source, configuration, or
+package metadata by default. A coverage-enabled run is not filesystem-read-only:
+the analyzer deletes and recreates `coverage/` before reporting. Use
+`--no-coverage` as the filesystem-read-only path when N/A coverage and CRAP are
+acceptable.
+
+Do not create issues merely because a report contains high scores. When Dave
+selects a function for improvement, create one plain Seeds issue and record
+before/after values for:
 
 - function, file, CC, statement coverage, and CRAP;
 - headline mutation score and covered-only score;
