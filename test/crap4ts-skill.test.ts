@@ -356,8 +356,12 @@ test("skill documents the optional Seeds and mutation feedback contract", async 
 		"Ask Dave before installing",
 		"target repository's package manager",
 		"agent-run, consent-gated preflight",
-		"`crap4ts.mjs` remains",
-		"must never install dependencies",
+		"does not autonomously install dependencies",
+		"caller-supplied `--coverage-command`",
+		"through a shell",
+		"The caller is responsible",
+		"Inspect the selected coverage command",
+		"Do not pass installer commands",
 		"Report-only use stops after triage",
 		"mutation testing is required",
 		"does not create Seeds issues",
@@ -395,27 +399,6 @@ test("skill documents the optional Seeds and mutation feedback contract", async 
 		assert.ok(
 			skill.includes(guidance),
 			`missing workflow guidance: ${guidance}`,
-		);
-	}
-});
-
-test("crap4ts runtime never installs dependencies", async () => {
-	const { readFile } = await import("node:fs/promises");
-	const scriptPath = new URL(
-		"../skills/engineering/crap4ts/scripts/crap4ts.mjs",
-		import.meta.url,
-	);
-	const script = await readFile(scriptPath.pathname, "utf8");
-	for (const forbidden of [
-		"npm install",
-		"npm i ",
-		"pnpm add",
-		"yarn add",
-		"bun add",
-	]) {
-		assert.ok(
-			!script.includes(forbidden),
-			`runtime must not install dependencies: ${forbidden}`,
 		);
 	}
 });

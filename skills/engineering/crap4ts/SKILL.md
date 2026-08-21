@@ -118,10 +118,16 @@ change the code safely. When coverage is unknown, act as if it were absent.
 
 ## Dependency Preflight
 
-This is an agent-run, consent-gated preflight. `crap4ts.mjs` remains
-analysis-only and must never install dependencies. Before running coverage or
-mutation testing, inspect the target repository rather than assuming packages
-are available:
+This is an agent-run, consent-gated preflight.
+`crap4ts.mjs` does not autonomously install dependencies. It executes the
+selected coverage command, including a caller-supplied `--coverage-command`,
+through a shell. The caller is responsible for reviewing the command and any
+referenced package script before approving it as analysis/test-only.
+Do not pass installer commands, untrusted input, or commands whose side effects
+have not been reviewed.
+
+Before running coverage or mutation testing, inspect the target repository rather
+than assuming packages are available:
 
 1. Detect its package manager from the lockfile (`pnpm`, `yarn`, `bun`, or
    `npm`).
@@ -129,14 +135,16 @@ are available:
    relevant workspace metadata; only then fall back to `npm`.
 3. If those sources disagree, stop and ask Dave rather than installing or
    creating/replacing a lockfile.
-4. Check both the manifest and local module resolution for:
+4. Inspect the selected coverage command and any referenced package script for
+   side effects before execution.
+5. Check both the manifest and local module resolution for:
    - `typescript` plus an existing coverage runner;
    - the coverage provider required by that runner (for Vitest, commonly
      `@vitest/coverage-v8` or `@vitest/coverage-istanbul`, compatible with the
      installed Vitest version);
    - `@stryker-mutator/core` plus the matching local test-runner plugin and a
      usable Stryker configuration for a function-improvement pass.
-5. Report the exact missing or incompatible dev dependencies before mutation.
+6. Report the exact missing or incompatible dev dependencies before mutation.
 
 **Ask Dave before installing** or changing `package.json`, a lockfile, scripts, or
 configuration. After approval, install compatible dev dependencies with the
