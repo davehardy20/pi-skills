@@ -341,6 +341,68 @@ test("self-check: the analyzer stays clean under its own metric", async () => {
 	}
 });
 
+test("skill documents the optional Seeds and mutation feedback contract", async () => {
+	const { readFile } = await import("node:fs/promises");
+	const skillPath = new URL(
+		"../skills/engineering/crap4ts/SKILL.md",
+		import.meta.url,
+	);
+	const skill = await readFile(skillPath.pathname, "utf8");
+	const requiredGuidance = [
+		"## Optional Seeds Handoff",
+		"## Dependency Preflight",
+		"@vitest/coverage-v8",
+		"@stryker-mutator/core",
+		"Ask Dave before installing",
+		"target repository's package manager",
+		"agent-run, consent-gated preflight",
+		"does not autonomously install dependencies",
+		"caller-supplied `--coverage-command`",
+		"through a shell",
+		"The caller is responsible",
+		"Inspect the selected coverage command",
+		"Do not pass installer commands",
+		"Report-only use stops after triage",
+		"mutation testing is required",
+		"does not create Seeds issues",
+		"deletes and recreates `coverage/`",
+		"`--no-coverage` as the filesystem-read-only path",
+		"No coverage",
+		"return to characterization",
+		"Covered survivor",
+		"Equivalent",
+		"Killed",
+		"mark mutation unavailable",
+		"never claim the gate passed",
+		"seeds-architecture-review",
+		"Use a plain issue for one function",
+		"Seeds tooling is unavailable",
+		"Ask Dave before initializing Seeds",
+		"remain in report-only mode",
+		"Detect its package manager from the lockfile",
+		"`packageManager`",
+		"workspace metadata",
+		"only then fall back to `npm`",
+		"sources disagree",
+		"headline mutation score",
+		"covered-only score",
+		"whole-file percentage",
+		"target repository",
+		"Never copy",
+		"preserve it",
+		"never lower it",
+		"invocation-specific or temporary configuration",
+		"Closure still requires the shared gate",
+		"Multi-function or multi-module",
+	];
+	for (const guidance of requiredGuidance) {
+		assert.ok(
+			skill.includes(guidance),
+			`missing workflow guidance: ${guidance}`,
+		);
+	}
+});
+
 test("temporary-file smoke: analyzeSource works on real files", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-test-`);
 	const file = resolve(dir, "tmp.ts");

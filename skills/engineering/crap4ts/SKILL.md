@@ -116,29 +116,160 @@ change the code safely. When coverage is unknown, act as if it were absent.
    count (1 or 0), not N/A.
 6. Applies `CRAP = CC² × (1 − coverage)³ + CC`, sorts worst-first.
 
+## Dependency Preflight
+
+This is an agent-run, consent-gated preflight.
+`crap4ts.mjs` does not autonomously install dependencies. It executes the
+selected coverage command, including a caller-supplied `--coverage-command`,
+through a shell. The caller is responsible for reviewing the command and any
+referenced package script before approving it as analysis/test-only.
+Do not pass installer commands, untrusted input, or commands whose side effects
+have not been reviewed.
+
+Before running coverage or mutation testing, inspect the target repository rather
+than assuming packages are available:
+
+1. Detect its package manager from the lockfile (`pnpm`, `yarn`, `bun`, or
+   `npm`).
+2. If no lockfile exists, inspect `package.json`'s `packageManager` field and
+   relevant workspace metadata; only then fall back to `npm`.
+3. If those sources disagree, stop and ask Dave rather than installing or
+   creating/replacing a lockfile.
+4. Inspect the selected coverage command and any referenced package script for
+   side effects before execution.
+5. Check both the manifest and local module resolution for:
+   - `typescript` plus an existing coverage runner;
+   - the coverage provider required by that runner (for Vitest, commonly
+     `@vitest/coverage-v8` or `@vitest/coverage-istanbul`, compatible with the
+     installed Vitest version);
+   - `@stryker-mutator/core` plus the matching local test-runner plugin and a
+     usable Stryker configuration for a function-improvement pass.
+6. Report the exact missing or incompatible dev dependencies before mutation.
+
+**Ask Dave before installing** or changing `package.json`, a lockfile, scripts, or
+configuration. After approval, install compatible dev dependencies with the
+target repository's package manager, inspect the manifest/lockfile diff, then
+rerun the preflight. Never satisfy the check with a global Stryker install.
+
+For report-only CRAP use, installation may be declined and `--no-coverage` may
+still produce a useful N/A report. Once Dave opts into a function-improvement
+pass, mutation testing is required before refactoring. If its local tooling is
+not authorized, mark mutation unavailable, never claim the gate passed, and
+defer the refactor.
+
 ## Recommended Workflow
 
-From crap4clj, grounded in *Clean Code* Ch 14 (successive refinement):
+CRAP and mutation testing answer different questions: CRAP finds structurally
+risky change surfaces; mutation testing checks whether tests observe behavioral
+changes. Their rankings may disagree. That disagreement identifies the lever:
+reduce complexity in high-CRAP functions, or strengthen observations where
+covered mutants survive.
 
-1. Run `crap4ts.mjs path/fragment`.
-2. Pick the highest scoring function in the module you are changing.
-3. Add characterization tests until coverage is clear enough to change the
-   code safely (Feathers).
-4. Refactor complex branches or split large functions (Ch 3).
-5. Rerun CRAP and tests before moving to the next risky function.
+Report-only use stops after triage. Steps 2–6 apply only after Dave opts into a
+function-improvement pass; mutation testing is required within that pass.
+
+1. **Triage** — run `crap4ts.mjs path/fragment`, then pick one function using
+   its score plus engineering judgment.
+2. **Optional handoff** — when Dave chooses to improve that function, follow the
+   Seeds availability fallback below, then create one plain issue with its
+   baseline and acceptance criteria.
+3. **Characterize** — add tests that capture current observable behavior
+   (Feathers).
+4. **Mutation-check** — run the required, file-scoped Stryker check and follow
+   the feedback loop below until the safety net is credible.
+5. **Refactor** — reduce the selected function's complexity (Ch 3), one function
+   per pass.
+6. **Verify and close** — rerun CRAP, mutation testing, and the normal suite.
+   Close only when CRAP fell for the intended reason, the mutation floor held,
+   no meaningful survivor regressed, and the suite is green.
 
 One function per pass — Ch 12's simple-design discipline, not batch refactors.
+
+## Optional Seeds Handoff
+
+Report-only use does not create Seeds issues or modify source, configuration, or
+package metadata by default. A coverage-enabled run is not filesystem-read-only:
+the analyzer deletes and recreates `coverage/` before reporting. Use
+`--no-coverage` as the filesystem-read-only path when N/A coverage and CRAP are
+acceptable.
+
+Before an improvement pass, check that Seeds tooling is available and the target
+repository is initialized. If Seeds tooling is unavailable or the project is not
+initialized, tell Dave. Ask Dave before initializing Seeds; if it cannot or
+should not be used, remain in report-only mode and do not refactor. Never
+initialize Seeds silently.
+
+Do not create issues merely because a report contains high scores. When Dave
+selects a function for improvement, create one plain Seeds issue and record
+before/after values for:
+
+- function, file, CC, statement coverage, and CRAP;
+- headline mutation score and covered-only score;
+- no-coverage count and selected-function survivor count;
+- important survivor dispositions, new timeouts, and equivalent-mutant
+  rationales;
+- acceptance criteria for CRAP, mutation behavior, and the normal suite.
+
+Use a plain issue for one function. Escalate **Multi-function or multi-module**
+campaigns, including `--fail-over` breaches spanning functions, to a Seeds
+plan. When structure is the problem and CRAP is only the symptom, use
+`seeds-architecture-review`.
+
+## Mutation Feedback Loop
+
+Use a target-repository Stryker installation and scope mutation to the chosen
+file. Inspect the selected function's mutants rather than relying only on the
+file-level score:
+
+- **No coverage** — return to characterization; tests never reached that code.
+- **Covered survivor** — strengthen observations or assertions, then rerun
+  mutation.
+- **Equivalent** — demonstrate identical observable behavior for the relevant
+  input domain and record the rationale.
+- **Killed** — the tested behavior is mutation-protected.
+
+Do not refactor until this loop produces a credible safety net, and do not chase
+100%. Equivalent mutants require judgment; never dismiss regex, string, or
+boundary mutants as cosmetic without evidence.
+
+Record two measurements:
+
+- the **headline mutation score**, which includes no-coverage mutants and is what
+  Stryker's `thresholds.break` gates;
+- the **covered-only score**, which helps assess assertion strength.
+
+A whole-file percentage can remain stable while an important mutant in changed
+behavior begins surviving. Closure therefore requires the target function's
+meaningful survivor set to hold, not merely the aggregate percentage.
+
+Treat `thresholds.break` as a repository-specific regression floor, not a
+universal target. If the target repository has no floor, run its baseline and set
+one just below its headline score. If a shared floor already exists, preserve it
+and never lower it to accommodate a weaker file-scoped baseline. Keep any lower
+selected-file baseline in invocation-specific or temporary configuration that
+does not weaken the shared floor. Closure still requires the shared gate to pass.
+Ratchet the shared floor upward only after verified improvement. **Never copy**
+another repository's numeric threshold.
+
+If Stryker is unavailable and adding it is not authorized, record mutation as
+unavailable and do not claim the mutation gate passed. Characterization may
+continue, but the function-improvement pass cannot advance to refactoring or
+closure.
 
 ## Environment Notes
 
 - Prefer trusted runners (`run_vitest`) for the coverage step when available;
-   fall back to the script's detected command only when a coverage script
-   already exists.
-- Ask Dave before running a full coverage suite in large repos; suggest the
-   `--changed` scope instead.
+  fall back to the script's detected command only when a coverage script already
+  exists.
+- Ask Dave before running a full coverage or mutation suite in large repos;
+  suggest `--changed` for CRAP and a single-file mutation scope.
+- Use per-repository dev dependencies (`@stryker-mutator/core` plus the matching
+  test-runner plugin), never a global Stryker install. Ask before adding
+  dependencies or configuration to a target repository.
+- Document the portable config shape (`stryker.config.json` plus the local
+  mutation script), not this repository's numeric threshold.
 - Path handling (coverage fallback, `--changed` filtering) is POSIX-only;
   Windows paths are unsupported.
 - Use `--fail-over N` as a CI or quality-gate closeout check (exit 2 on
-   breach, mirroring crap4java's exit-code gate). N/A-coverage rows never
-   breach the gate; pair the gate with a coverage-required check when that
-   matters.
+  breach, mirroring crap4java's exit-code gate). N/A-coverage rows never breach
+  the gate; pair it with a coverage-required check when that matters.
