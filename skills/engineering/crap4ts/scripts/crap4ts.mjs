@@ -505,6 +505,14 @@ const PACKAGE_MANAGER_LOCKFILES = [
 	{ name: "npm", file: "npm-shrinkwrap.json" },
 ];
 
+const WORKSPACE_METADATA = [
+	{ name: "pnpm", file: "pnpm-workspace.yaml" },
+	{ name: "yarn", file: ".yarnrc.yml" },
+	{ name: "yarn", file: ".pnp.cjs" },
+	{ name: "yarn", file: ".pnp.loader.mjs" },
+	{ name: "bun", file: "bunfig.toml" },
+];
+
 const DEPENDENCY_FIELDS = [
 	"dependencies",
 	"devDependencies",
@@ -523,24 +531,105 @@ const STRYKER_PACKAGES = [
 	"@stryker-mutator/jest-runner",
 ];
 
-function declaredDependency(pkg, name) {
-	return DEPENDENCY_FIELDS.some((field) =>
-		Object.hasOwn(pkg[field] ?? {}, name),
-	);
+function declaredDependencyVersion(pkg, name) {
+	for (const field of DEPENDENCY_FIELDS) {
+		const group = pkg[field] ?? {};
+		if (Object.hasOwn(group, name)) return group[name];
+	}
+	return null;
 }
 
 function localDependencyPath(rootDir, name) {
 	return resolve(rootDir, "node_modules", ...name.split("/"), "package.json");
 }
 
-function dependencyState(rootDir, pkg, name) {
-	const declared = declaredDependency(pkg, name);
-	const installed = existsSync(localDependencyPath(rootDir, name));
+function readPackageJson(path) {
+	try {
+		return JSON.parse(readFileSync(path, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+function resolvedDependencyPath(rootDir, name) {
+	try {
+		const req = createRequire(resolve(rootDir, "package.json"));
+		return req.resolve(`${name}/package.json`);
+	} catch {
+		return null;
+	}
+}
+
+function hasPnpMetadata(rootDir) {
+	return [".pnp.cjs", ".pnp.loader.mjs"].some((file) =>
+		existsSync(join(rootDir, file)),
+	);
+}
+
+function majorVersion(version) {
+	if (typeof version !== "string") return null;
+	const match = version.match(/\d+/);
+	return match ? Number(match[0]) : null;
+}
+
+function dependencyState(rootDir, pkg, name, packageManagerName) {
+	const declaredVersion = declaredDependencyVersion(pkg, name);
+	const declared = declaredVersion != null;
+	const localPath = localDependencyPath(rootDir, name);
+	const resolvedPath = existsSync(localPath)
+		? localPath
+		: resolvedDependencyPath(rootDir, name);
+	const pnpDeclared =
+		packageManagerName === "yarn" && hasPnpMetadata(rootDir) && declared;
+	const installed = resolvedPath != null || pnpDeclared;
+	const installedPackage = resolvedPath ? readPackageJson(resolvedPath) : null;
+	const installedVersion = installedPackage?.version ?? null;
 	let status = "missing";
 	if (declared && installed) status = "ok";
 	else if (declared) status = "declared-not-installed";
 	else if (installed) status = "installed-not-declared";
-	return { name, declared, installed, status };
+	if (
+		status === "ok" &&
+		installedVersion &&
+		majorVersion(declaredVersion) != null &&
+		majorVersion(installedVersion) != null &&
+		majorVersion(declaredVersion) !== majorVersion(installedVersion)
+	) {
+		status = "version-mismatch";
+	}
+	return {
+		name,
+		declared,
+		installed,
+		status,
+		declaredVersion,
+		installedVersion,
+	};
+}
+
+function markPairMismatch(dependencies, leftName, rightName) {
+	const left = dependencies.get(leftName);
+	const right = dependencies.get(rightName);
+	if (left?.status !== "ok" || right?.status !== "ok") return;
+	if (
+		majorVersion(left.installedVersion) != null &&
+		majorVersion(right.installedVersion) != null &&
+		majorVersion(left.installedVersion) !== majorVersion(right.installedVersion)
+	) {
+		right.status = "version-mismatch";
+	}
+}
+
+function applyCompatibilityChecks(dependencies) {
+	for (const provider of VITEST_COVERAGE_PROVIDERS) {
+		markPairMismatch(dependencies, "vitest", provider);
+	}
+	for (const runner of [
+		"@stryker-mutator/vitest-runner",
+		"@stryker-mutator/jest-runner",
+	]) {
+		markPairMismatch(dependencies, "@stryker-mutator/core", runner);
+	}
 }
 
 function inferRunner(command) {
@@ -548,6 +637,34 @@ function inferRunner(command) {
 	if (/\bvitest\b/.test(command)) return "vitest";
 	if (/\bjest\b/.test(command)) return "jest";
 	return null;
+}
+
+function delegatedScriptNames(command) {
+	if (!command) return [];
+	const names = [];
+	const patterns = [
+		/\b(?:npm|pnpm|bun)\s+run\s+([\w:.-]+)/g,
+		/\byarn\s+(?:run\s+)?([\w:.-]+)/g,
+	];
+	for (const pattern of patterns) {
+		for (const match of command.matchAll(pattern)) {
+			if (match[1] && match[1] !== "run") names.push(match[1]);
+		}
+	}
+	return names;
+}
+
+function expandedScriptCommand(pkg, command, seen = new Set()) {
+	const scripts = pkg.scripts ?? {};
+	const parts = [command];
+	for (const scriptName of delegatedScriptNames(command)) {
+		if (seen.has(scriptName)) continue;
+		seen.add(scriptName);
+		const script = scripts[scriptName];
+		if (typeof script !== "string") continue;
+		parts.push(expandedScriptCommand(pkg, script, seen));
+	}
+	return parts.join("\n");
 }
 
 function packageManagerFromField(pkg) {
@@ -560,6 +677,13 @@ export function detectPackageManager(rootDir, pkg) {
 	const lockManagers = [
 		...new Set(
 			PACKAGE_MANAGER_LOCKFILES.filter(({ file }) =>
+				existsSync(join(rootDir, file)),
+			).map(({ name }) => name),
+		),
+	];
+	const metadataManagers = [
+		...new Set(
+			WORKSPACE_METADATA.filter(({ file }) =>
 				existsSync(join(rootDir, file)),
 			).map(({ name }) => name),
 		),
@@ -581,9 +705,10 @@ export function detectPackageManager(rootDir, pkg) {
 		);
 	}
 	return {
-		manager: lockManagers[0] ?? packageManager ?? "npm",
+		manager: lockManagers[0] ?? packageManager ?? metadataManagers[0] ?? "npm",
 		lockManagers,
 		packageManager,
+		metadataManagers,
 		problems,
 	};
 }
@@ -606,19 +731,21 @@ function coveragePlan(
 		};
 	}
 	if (typeof scripts["test:coverage"] === "string") {
+		const script = scripts["test:coverage"];
 		return {
 			command: runCommand("test:coverage"),
 			source: "script:test:coverage",
-			script: scripts["test:coverage"],
-			runner: inferRunner(scripts["test:coverage"]),
+			script,
+			runner: inferRunner(expandedScriptCommand(pkg, script)),
 		};
 	}
 	if (typeof scripts.coverage === "string") {
+		const script = scripts.coverage;
 		return {
 			command: runCommand("coverage"),
 			source: "script:coverage",
-			script: scripts.coverage,
-			runner: inferRunner(scripts.coverage),
+			script,
+			runner: inferRunner(expandedScriptCommand(pkg, script)),
 		};
 	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "vitest"))) {
@@ -700,9 +827,10 @@ export function inspectDependencyPreflight(
 	const dependencies = new Map(
 		[...dependencyNames].map((name) => [
 			name,
-			dependencyState(rootDir, pkg, name),
+			dependencyState(rootDir, pkg, name, packageManager.manager),
 		]),
 	);
+	applyCompatibilityChecks(dependencies);
 	const missingCoverage = [];
 	if (plan?.runner === "vitest") {
 		if (dependencies.get("vitest")?.status !== "ok") {

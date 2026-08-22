@@ -542,6 +542,122 @@ test("dependency preflight requires the Stryker runner matching coverage", async
 	}
 });
 
+test("dependency preflight follows delegated coverage scripts", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-delegated-preflight-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+			["@vitest/coverage-v8", "4.0.0"],
+			["@stryker-mutator/core", "10.0.0"],
+			["@stryker-mutator/vitest-runner", "10.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: {
+				test: "vitest run",
+				"test:coverage": "npm run test -- --coverage",
+			},
+			devDependencies: {
+				typescript: "^5",
+				vitest: "^4",
+				"@vitest/coverage-v8": "^4",
+				"@stryker-mutator/core": "^10",
+				"@stryker-mutator/vitest-runner": "^10",
+			},
+		});
+		assert.equal(preflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight supports Yarn Plug'n'Play declarations", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-pnp-preflight-`);
+	const { rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		await write(join(dir, ".pnp.cjs"), "module.exports = {};\n");
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "yarn@4.0.0",
+			scripts: { "test:coverage": "yarn vitest run --coverage" },
+			devDependencies: {
+				typescript: "^5",
+				vitest: "^4",
+				"@vitest/coverage-v8": "^4",
+				"@stryker-mutator/core": "^10",
+				"@stryker-mutator/vitest-runner": "^10",
+			},
+		});
+		assert.equal(preflight.packageManager.manager, "yarn");
+		assert.equal(preflight.dependencies.get("vitest")?.status, "ok");
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight flags version-mismatched companions", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-version-preflight-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+			["@vitest/coverage-v8", "3.0.0"],
+			["@stryker-mutator/core", "10.0.0"],
+			["@stryker-mutator/vitest-runner", "9.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "^5",
+				vitest: "^4",
+				"@vitest/coverage-v8": "^3",
+				"@stryker-mutator/core": "^10",
+				"@stryker-mutator/vitest-runner": "^9",
+			},
+		});
+		assert.equal(
+			preflight.dependencies.get("@vitest/coverage-v8")?.status,
+			"version-mismatch",
+		);
+		assert.equal(
+			preflight.dependencies.get("@stryker-mutator/vitest-runner")?.status,
+			"version-mismatch",
+		);
+		assert.deepEqual(preflight.coverage.missing, [
+			"@vitest/coverage-v8",
+			"@vitest/coverage-istanbul",
+		]);
+		assert.deepEqual(preflight.mutation.missing, [
+			"@stryker-mutator/vitest-runner",
+		]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight catches package-manager disagreement", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-pm-`);
 	const { rm, writeFile: write } = await import("node:fs/promises");
@@ -552,6 +668,19 @@ test("dependency preflight catches package-manager disagreement", async () => {
 		});
 		assert.equal(detected.manager, "pnpm");
 		assert.match(detected.problems.join("\n"), /packageManager \(npm\)/);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("package manager detection uses workspace metadata before npm fallback", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-workspace-pm-`);
+	const { rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		await write(join(dir, "pnpm-workspace.yaml"), "packages: []\n");
+		const detected = detectPackageManager(dir, {});
+		assert.equal(detected.manager, "pnpm");
+		assert.deepEqual(detected.metadataManagers, ["pnpm"]);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

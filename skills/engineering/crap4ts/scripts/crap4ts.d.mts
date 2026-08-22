@@ -150,6 +150,7 @@ export interface PackageManagerPreflight {
 	manager: string;
 	lockManagers: string[];
 	packageManager: string | null;
+	metadataManagers: string[];
 	problems: string[];
 }
 
@@ -161,7 +162,10 @@ export interface DependencyState {
 		| "ok"
 		| "missing"
 		| "declared-not-installed"
-		| "installed-not-declared";
+		| "installed-not-declared"
+		| "version-mismatch";
+	declaredVersion?: unknown;
+	installedVersion?: unknown;
 }
 
 export interface DependencyPreflight {
