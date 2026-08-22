@@ -566,6 +566,89 @@ function majorVersion(version) {
 	return match ? Number(match[0]) : null;
 }
 
+function parseVersionTuple(value) {
+	if (typeof value !== "string") return null;
+	const match = value.match(/v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+	if (!match) return null;
+	return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
+}
+
+function compareVersionTuples(left, right) {
+	for (let index = 0; index < 3; index += 1) {
+		if (left[index] > right[index]) return 1;
+		if (left[index] < right[index]) return -1;
+	}
+	return 0;
+}
+
+function satisfiesComparator(version, comparator) {
+	const match = comparator.match(/^(>=|>|<=|<|=)?\s*v?(\d+(?:\.\d+){0,2})$/);
+	if (!match) return null;
+	const operator = match[1] ?? "=";
+	const target = parseVersionTuple(match[2]);
+	if (!target) return null;
+	const comparison = compareVersionTuples(version, target);
+	if (operator === ">=") return comparison >= 0;
+	if (operator === ">") return comparison > 0;
+	if (operator === "<=") return comparison <= 0;
+	if (operator === "<") return comparison < 0;
+	return comparison === 0;
+}
+
+function satisfiesDeclaredRange(installedVersion, declaredVersion) {
+	const installed = parseVersionTuple(installedVersion);
+	if (!installed || typeof declaredVersion !== "string") return null;
+	const range = declaredVersion.trim();
+	if (!range || ["*", "latest"].includes(range) || /x/i.test(range)) {
+		return null;
+	}
+	let sawAnyKnownComparator = false;
+	for (const alternative of range.split("||")) {
+		const comparators = alternative.trim().split(/\s+/).filter(Boolean);
+		if (comparators.length === 0) continue;
+		let sawKnownComparator = false;
+		let satisfied = true;
+		for (const comparator of comparators) {
+			const caret = comparator.match(/^\^\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+			if (caret) {
+				sawKnownComparator = true;
+				sawAnyKnownComparator = true;
+				const lower = parseVersionTuple(caret[0].slice(1));
+				const upper = [Number(caret[1]) + 1, 0, 0];
+				satisfied =
+					lower != null &&
+					compareVersionTuples(installed, lower) >= 0 &&
+					compareVersionTuples(installed, upper) < 0;
+				if (!satisfied) break;
+				continue;
+			}
+			const tilde = comparator.match(/^~\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+			if (tilde) {
+				sawKnownComparator = true;
+				sawAnyKnownComparator = true;
+				const lower = parseVersionTuple(tilde[0].slice(1));
+				const upper = [Number(tilde[1]), Number(tilde[2] ?? 0) + 1, 0];
+				satisfied =
+					lower != null &&
+					compareVersionTuples(installed, lower) >= 0 &&
+					compareVersionTuples(installed, upper) < 0;
+				if (!satisfied) break;
+				continue;
+			}
+			const comparatorResult = satisfiesComparator(installed, comparator);
+			if (comparatorResult == null) continue;
+			sawKnownComparator = true;
+			sawAnyKnownComparator = true;
+			if (!comparatorResult) {
+				satisfied = false;
+				break;
+			}
+		}
+		if (sawKnownComparator && satisfied) return true;
+	}
+	return sawAnyKnownComparator ? false : null;
+}
+
 function dependencyState(rootDir, pkg, name, packageManagerName) {
 	const declaredVersion = declaredDependencyVersion(pkg, name);
 	const declared = declaredVersion != null;
@@ -584,13 +667,11 @@ function dependencyState(rootDir, pkg, name, packageManagerName) {
 	if (declared && installed) status = "ok";
 	else if (declared) status = "declared-not-installed";
 	else if (installed) status = "installed-not-declared";
-	if (
-		status === "ok" &&
-		installedVersion &&
-		majorVersion(declaredVersion) != null &&
-		majorVersion(installedVersion) != null &&
-		majorVersion(declaredVersion) !== majorVersion(installedVersion)
-	) {
+	const satisfiesDeclared = satisfiesDeclaredRange(
+		installedVersion,
+		declaredVersion,
+	);
+	if (status === "ok" && satisfiesDeclared === false) {
 		status = "version-mismatch";
 	}
 	return {
@@ -747,7 +828,7 @@ function coveragePlan(
 			command: overrideCommand,
 			source: "override",
 			script: null,
-			runner: inferRunner(overrideCommand),
+			runner: inferRunner(expandedScriptCommand(pkg, overrideCommand)),
 		};
 	}
 	if (typeof scripts["test:coverage"] === "string") {
