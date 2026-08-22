@@ -797,6 +797,126 @@ test("dependency preflight handles npm caret and tilde boundaries", async () => 
 	}
 });
 
+test("dependency preflight handles hyphenated semver ranges", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-hyphen-ranges-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.9.0"],
+			["vitest", "4.1.0"],
+			["@vitest/coverage-v8", "4.1.0"],
+			["@stryker-mutator/core", "10.2.0"],
+			["@stryker-mutator/vitest-runner", "10.2.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify(
+					name === "@vitest/coverage-v8"
+						? { version, peerDependencies: { vitest: "4.0.0 - 4.2.0" } }
+						: { version },
+				),
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "5.0.0 - 5.9.9",
+				vitest: "4.0.0 - 4.2.0",
+				"@vitest/coverage-v8": "4.0.0 - 4.2.0",
+				"@stryker-mutator/core": "10.0.0 - 10.9.9",
+				"@stryker-mutator/vitest-runner": "10.0.0 - 10.9.9",
+			},
+		});
+		assert.equal(preflight.dependencies.get("vitest")?.status, "ok");
+		assert.equal(
+			preflight.dependencies.get("@vitest/coverage-v8")?.status,
+			"ok",
+		);
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight validates Vitest coverage provider peer range", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-peer-range-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, pkg] of [
+			["typescript", { version: "5.9.0" }],
+			["vitest", { version: "4.1.9" }],
+			[
+				"@vitest/coverage-v8",
+				{ version: "4.0.0", peerDependencies: { vitest: "4.0.0" } },
+			],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify(pkg),
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "5",
+				vitest: ">=4 <5",
+				"@vitest/coverage-v8": ">=4 <5",
+			},
+		});
+		assert.equal(
+			preflight.dependencies.get("@vitest/coverage-v8")?.status,
+			"version-mismatch",
+		);
+		assert.deepEqual(preflight.coverage.missing, [
+			"@vitest/coverage-v8",
+			"@vitest/coverage-istanbul",
+		]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight infers runner from executable commands only", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-runner-executable-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.9.0"],
+			["jest", "30.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		const preflight = inspectDependencyPreflight(
+			dir,
+			{
+				packageManager: "npm@10.0.0",
+				scripts: { "test:vitest": "jest --coverage --env=vitest" },
+				devDependencies: { typescript: "5", jest: "30" },
+			},
+			{ coverageCommand: "npm run test:vitest" },
+		);
+		assert.equal(preflight.coverage.plan?.runner, "jest");
+		assert.deepEqual(preflight.coverage.missing, []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight catches package-manager disagreement", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-pm-`);
 	const { rm, writeFile: write } = await import("node:fs/promises");

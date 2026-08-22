@@ -616,6 +616,22 @@ function tildeUpperBound({ tuple, partCount }) {
 	return [major, minor + 1, 0];
 }
 
+function hyphenRangeResult(version, alternative) {
+	const match = alternative.match(
+		/^\s*(v?\d+(?:\.\d+){0,2})\s+-\s+(v?\d+(?:\.\d+){0,2})\s*$/,
+	);
+	if (!match) return null;
+	const lower = parseVersionParts(match[1]);
+	const upper = parseVersionParts(match[2]);
+	if (!lower || !upper) return null;
+	if (compareVersionTuples(version, lower.tuple) < 0) return false;
+	if (upper.partCount < 3) {
+		const upperBound = bareUpperBound(upper);
+		return upperBound ? compareVersionTuples(version, upperBound) < 0 : null;
+	}
+	return compareVersionTuples(version, upper.tuple) <= 0;
+}
+
 function satisfiesComparator(version, comparator) {
 	const match = comparator.match(/^(>=|>|<=|<|=)?\s*(v?\d+(?:\.\d+){0,2})$/);
 	if (!match) return null;
@@ -646,6 +662,12 @@ function satisfiesDeclaredRange(installedVersion, declaredVersion) {
 	}
 	let sawAnyKnownComparator = false;
 	for (const alternative of range.split("||")) {
+		const hyphenResult = hyphenRangeResult(installed, alternative);
+		if (hyphenResult != null) {
+			sawAnyKnownComparator = true;
+			if (hyphenResult) return true;
+			continue;
+		}
 		const comparators = alternative.trim().split(/\s+/).filter(Boolean);
 		if (comparators.length === 0) continue;
 		let sawKnownComparator = false;
@@ -717,6 +739,7 @@ function dependencyState(rootDir, pkg, name, packageManagerName) {
 		status,
 		declaredVersion,
 		installedVersion,
+		installedPackage,
 	};
 }
 
@@ -733,9 +756,23 @@ function markPairMismatch(dependencies, leftName, rightName) {
 	}
 }
 
+function markVitestProviderMismatch(dependencies, providerName) {
+	const vitest = dependencies.get("vitest");
+	const provider = dependencies.get(providerName);
+	if (vitest?.status !== "ok" || provider?.status !== "ok") return;
+	const peerRange = provider.installedPackage?.peerDependencies?.vitest;
+	if (typeof peerRange === "string") {
+		if (satisfiesDeclaredRange(vitest.installedVersion, peerRange) === false) {
+			provider.status = "version-mismatch";
+		}
+		return;
+	}
+	markPairMismatch(dependencies, "vitest", providerName);
+}
+
 function applyCompatibilityChecks(dependencies) {
 	for (const provider of VITEST_COVERAGE_PROVIDERS) {
-		markPairMismatch(dependencies, "vitest", provider);
+		markVitestProviderMismatch(dependencies, provider);
 	}
 	for (const runner of [
 		"@stryker-mutator/vitest-runner",
@@ -745,10 +782,32 @@ function applyCompatibilityChecks(dependencies) {
 	}
 }
 
+function commandExecutableTokens(command) {
+	const tokens = [];
+	for (const line of command.split(/\n+/)) {
+		for (const segment of line.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
+			const words = segment.trim().split(/\s+/).filter(Boolean);
+			while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) words.shift();
+			const first = words[0];
+			if (!first) continue;
+			if (["npm", "pnpm", "bun"].includes(first)) continue;
+			if (first === "yarn") {
+				const yarnExecutable = words[1] === "run" ? null : words[1];
+				if (yarnExecutable) tokens.push(yarnExecutable);
+				continue;
+			}
+			tokens.push(first.split("/").at(-1));
+		}
+	}
+	return tokens;
+}
+
 function inferRunner(command) {
 	if (!command) return null;
-	if (/\bvitest\b/.test(command)) return "vitest";
-	if (/\bjest\b/.test(command)) return "jest";
+	for (const token of commandExecutableTokens(command)) {
+		if (token === "vitest") return "vitest";
+		if (token === "jest") return "jest";
+	}
 	return null;
 }
 
