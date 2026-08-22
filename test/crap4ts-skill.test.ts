@@ -734,13 +734,14 @@ test("dependency preflight accepts installed versions satisfying declared ranges
 			packageManager: "npm@10.0.0",
 			scripts: { "test:coverage": "vitest run --coverage" },
 			devDependencies: {
-				typescript: ">=5 <6",
-				vitest: ">=3 <5",
-				"@vitest/coverage-v8": ">=3 <5",
+				typescript: "5",
+				vitest: "4",
+				"@vitest/coverage-v8": "4",
 				"@stryker-mutator/core": ">=10 <11",
 				"@stryker-mutator/vitest-runner": ">=10 <11",
 			},
 		});
+		assert.equal(preflight.dependencies.get("typescript")?.status, "ok");
 		assert.equal(preflight.dependencies.get("vitest")?.status, "ok");
 		assert.equal(
 			preflight.dependencies.get("@vitest/coverage-v8")?.status,

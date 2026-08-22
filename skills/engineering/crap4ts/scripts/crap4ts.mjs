@@ -584,9 +584,17 @@ function compareVersionTuples(left, right) {
 function satisfiesComparator(version, comparator) {
 	const match = comparator.match(/^(>=|>|<=|<|=)?\s*v?(\d+(?:\.\d+){0,2})$/);
 	if (!match) return null;
-	const operator = match[1] ?? "=";
-	const target = parseVersionTuple(match[2]);
+	const operator = match[1] ?? null;
+	const targetText = match[2];
+	const target = parseVersionTuple(targetText);
 	if (!target) return null;
+	if (operator == null) {
+		const partCount = targetText.split(".").length;
+		if (partCount === 1) return version[0] === target[0];
+		if (partCount === 2) {
+			return version[0] === target[0] && version[1] === target[1];
+		}
+	}
 	const comparison = compareVersionTuples(version, target);
 	if (operator === ">=") return comparison >= 0;
 	if (operator === ">") return comparison > 0;
