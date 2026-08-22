@@ -560,21 +560,6 @@ function resolvedDependencyPath(rootDir, name) {
 	}
 }
 
-function pnpDependencyPath(rootDir, name) {
-	const pnpPath = join(rootDir, ".pnp.cjs");
-	if (!existsSync(pnpPath)) return null;
-	try {
-		const pnp = createRequire(pnpPath)(pnpPath);
-		if (typeof pnp.resolveToUnqualified !== "function") return null;
-		const issuer = resolve(rootDir, "package.json");
-		return pnp.resolveToUnqualified(`${name}/package.json`, issuer, {
-			considerBuiltins: false,
-		});
-	} catch {
-		return null;
-	}
-}
-
 function majorVersion(version) {
 	if (typeof version !== "string") return null;
 	const match = version.match(/\d+/);
@@ -585,12 +570,13 @@ function dependencyState(rootDir, pkg, name, packageManagerName) {
 	const declaredVersion = declaredDependencyVersion(pkg, name);
 	const declared = declaredVersion != null;
 	const localPath = localDependencyPath(rootDir, name);
+	// Do not require `.pnp.cjs` here: it is executable project code. The
+	// dependency preflight is an inspection gate, so Yarn PnP installs fail closed
+	// as declared-not-installed unless normal package.json resolution works.
+	void packageManagerName;
 	const resolvedPath = existsSync(localPath)
 		? localPath
-		: (resolvedDependencyPath(rootDir, name) ??
-			(packageManagerName === "yarn"
-				? pnpDependencyPath(rootDir, name)
-				: null));
+		: resolvedDependencyPath(rootDir, name);
 	const installed = resolvedPath != null;
 	const installedPackage = resolvedPath ? readPackageJson(resolvedPath) : null;
 	const installedVersion = installedPackage?.version ?? null;
@@ -704,6 +690,11 @@ export function detectPackageManager(rootDir, pkg) {
 	if (lockManagers.length > 1) {
 		problems.push(
 			`multiple lockfile package managers: ${lockManagers.join(", ")}`,
+		);
+	}
+	if (metadataManagers.length > 1) {
+		problems.push(
+			`multiple workspace metadata package managers: ${metadataManagers.join(", ")}`,
 		);
 	}
 	if (

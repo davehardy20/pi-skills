@@ -167,6 +167,11 @@ than assuming packages are available:
      usable Stryker configuration for a function-improvement pass.
 6. Report the exact missing or incompatible dev dependencies before mutation.
 
+For Yarn Plug'n'Play projects, treat `.pnp.cjs` and loader files as workspace
+metadata only during preflight. Do not execute them just to prove dependency
+availability; if normal package resolution cannot prove the package is installed,
+report it as unavailable and ask before any coverage or mutation run.
+
 **Ask Dave before installing** or changing `package.json`, a lockfile, scripts, or
 configuration. After approval, install compatible dev dependencies with the
 target repository's package manager, inspect the manifest/lockfile diff, then

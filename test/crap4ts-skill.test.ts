@@ -583,32 +583,17 @@ test("dependency preflight follows delegated coverage scripts", async () => {
 	}
 });
 
-test("dependency preflight supports Yarn Plug'n'Play declarations", async () => {
+test("dependency preflight does not execute Yarn Plug'n'Play loader code", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-pnp-preflight-`);
-	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	const { rm, writeFile: write } = await import("node:fs/promises");
 	try {
-		const versions = new Map([
-			["typescript", "5.0.0"],
-			["vitest", "4.0.0"],
-			["@vitest/coverage-v8", "4.0.0"],
-			["@stryker-mutator/core", "10.0.0"],
-			["@stryker-mutator/vitest-runner", "10.0.0"],
-		]);
-		for (const [name, version] of versions) {
-			await mkdir(join(dir, ".pnp-packages", ...name.split("/")), {
-				recursive: true,
-			});
-			await write(
-				join(dir, ".pnp-packages", ...name.split("/"), "package.json"),
-				JSON.stringify({ version }),
-			);
-		}
 		await write(
 			join(dir, ".pnp.cjs"),
-			`const path = require("node:path");
+			`const fs = require("node:fs");
+			fs.writeFileSync("pnp-sentinel.txt", "executed");
 			module.exports = {
 			  resolveToUnqualified(request) {
-			    return path.join(__dirname, ".pnp-packages", request);
+			    return request;
 			  },
 			};
 			`,
@@ -625,9 +610,17 @@ test("dependency preflight supports Yarn Plug'n'Play declarations", async () => 
 			},
 		});
 		assert.equal(preflight.packageManager.manager, "yarn");
-		assert.equal(preflight.dependencies.get("vitest")?.status, "ok");
-		assert.deepEqual(preflight.coverage.missing, []);
-		assert.deepEqual(preflight.mutation.missing, []);
+		assert.equal(
+			preflight.dependencies.get("vitest")?.status,
+			"declared-not-installed",
+		);
+		let sentinelExists = true;
+		try {
+			await access(join(dir, "pnp-sentinel.txt"));
+		} catch {
+			sentinelExists = false;
+		}
+		assert.equal(sentinelExists, false);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -712,6 +705,23 @@ test("package manager detection uses workspace metadata before npm fallback", as
 		assert.match(
 			conflicting.problems.join("\n"),
 			/packageManager \(npm\) disagrees with workspace metadata \(pnpm\)/,
+		);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("package manager detection flags multiple workspace metadata managers", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-workspace-conflict-`);
+	const { rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		await write(join(dir, "pnpm-workspace.yaml"), "packages: []\n");
+		await write(join(dir, ".yarnrc.yml"), "nodeLinker: pnp\n");
+		const detected = detectPackageManager(dir, {});
+		assert.deepEqual(detected.metadataManagers, ["pnpm", "yarn"]);
+		assert.match(
+			detected.problems.join("\n"),
+			/multiple workspace metadata package managers: pnpm, yarn/,
 		);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
