@@ -496,25 +496,300 @@ function loadTypeScript(rootDir) {
 	);
 }
 
-export function detectCoverageCommand(rootDir, pkg) {
+const PACKAGE_MANAGER_LOCKFILES = [
+	{ name: "pnpm", file: "pnpm-lock.yaml" },
+	{ name: "yarn", file: "yarn.lock" },
+	{ name: "bun", file: "bun.lock" },
+	{ name: "bun", file: "bun.lockb" },
+	{ name: "npm", file: "package-lock.json" },
+	{ name: "npm", file: "npm-shrinkwrap.json" },
+];
+
+const DEPENDENCY_FIELDS = [
+	"dependencies",
+	"devDependencies",
+	"peerDependencies",
+	"optionalDependencies",
+];
+
+const VITEST_COVERAGE_PROVIDERS = [
+	"@vitest/coverage-v8",
+	"@vitest/coverage-istanbul",
+];
+
+const STRYKER_PACKAGES = [
+	"@stryker-mutator/core",
+	"@stryker-mutator/vitest-runner",
+	"@stryker-mutator/jest-runner",
+];
+
+function declaredDependency(pkg, name) {
+	return DEPENDENCY_FIELDS.some((field) =>
+		Object.hasOwn(pkg[field] ?? {}, name),
+	);
+}
+
+function localDependencyPath(rootDir, name) {
+	return resolve(rootDir, "node_modules", ...name.split("/"), "package.json");
+}
+
+function dependencyState(rootDir, pkg, name) {
+	const declared = declaredDependency(pkg, name);
+	const installed = existsSync(localDependencyPath(rootDir, name));
+	let status = "missing";
+	if (declared && installed) status = "ok";
+	else if (declared) status = "declared-not-installed";
+	else if (installed) status = "installed-not-declared";
+	return { name, declared, installed, status };
+}
+
+function inferRunner(command) {
+	if (!command) return null;
+	if (/\bvitest\b/.test(command)) return "vitest";
+	if (/\bjest\b/.test(command)) return "jest";
+	return null;
+}
+
+function packageManagerFromField(pkg) {
+	if (typeof pkg.packageManager !== "string") return null;
+	const name = pkg.packageManager.split("@")[0];
+	return ["pnpm", "yarn", "bun", "npm"].includes(name) ? name : null;
+}
+
+export function detectPackageManager(rootDir, pkg) {
+	const lockManagers = [
+		...new Set(
+			PACKAGE_MANAGER_LOCKFILES.filter(({ file }) =>
+				existsSync(join(rootDir, file)),
+			).map(({ name }) => name),
+		),
+	];
+	const packageManager = packageManagerFromField(pkg);
+	const problems = [];
+	if (lockManagers.length > 1) {
+		problems.push(
+			`multiple lockfile package managers: ${lockManagers.join(", ")}`,
+		);
+	}
+	if (
+		packageManager &&
+		lockManagers.length > 0 &&
+		!lockManagers.includes(packageManager)
+	) {
+		problems.push(
+			`packageManager (${packageManager}) disagrees with lockfile (${lockManagers.join(", ")})`,
+		);
+	}
+	return {
+		manager: lockManagers[0] ?? packageManager ?? "npm",
+		lockManagers,
+		packageManager,
+		problems,
+	};
+}
+
+function coveragePlan(
+	rootDir,
+	pkg,
+	overrideCommand,
+	packageManagerName = null,
+) {
 	const scripts = pkg.scripts ?? {};
-	if (typeof scripts["test:coverage"] === "string")
-		return "npm run test:coverage";
-	if (typeof scripts.coverage === "string") return "npm run coverage";
+	const runCommand = (scriptName) =>
+		`${packageManagerName ?? detectPackageManager(rootDir, pkg).manager} run ${scriptName}`;
+	if (overrideCommand) {
+		return {
+			command: overrideCommand,
+			source: "override",
+			script: null,
+			runner: inferRunner(overrideCommand),
+		};
+	}
+	if (typeof scripts["test:coverage"] === "string") {
+		return {
+			command: runCommand("test:coverage"),
+			source: "script:test:coverage",
+			script: scripts["test:coverage"],
+			runner: inferRunner(scripts["test:coverage"]),
+		};
+	}
+	if (typeof scripts.coverage === "string") {
+		return {
+			command: runCommand("coverage"),
+			source: "script:coverage",
+			script: scripts.coverage,
+			runner: inferRunner(scripts.coverage),
+		};
+	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "vitest"))) {
-		return "./node_modules/.bin/vitest run --coverage --coverage.reporter=json --coverage.reporter=text-summary";
+		return {
+			command: [
+				"./node_modules/.bin/vitest run --coverage",
+				"--coverage.reporter=json --coverage.reporter=text-summary",
+			].join(" "),
+			source: "local-bin:vitest",
+			script: null,
+			runner: "vitest",
+		};
 	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "jest"))) {
-		return "./node_modules/.bin/jest --coverage --coverageReporters=json --passWithNoTests";
+		return {
+			command: [
+				"./node_modules/.bin/jest --coverage",
+				"--coverageReporters=json --passWithNoTests",
+			].join(" "),
+			source: "local-bin:jest",
+			script: null,
+			runner: "jest",
+		};
 	}
 	return null;
 }
 
-function runCoverage(rootDir, pkg, overrideCommand, stderr = process.stderr) {
-	const command = overrideCommand ?? detectCoverageCommand(rootDir, pkg);
+function missingVitestCoverageProviders(dependencies) {
+	const hasProvider = VITEST_COVERAGE_PROVIDERS.some(
+		(name) => dependencies.get(name)?.status === "ok",
+	);
+	return hasProvider ? [] : VITEST_COVERAGE_PROVIDERS;
+}
+
+function missingMutationPackages(dependencies) {
+	const missing = [];
+	if (dependencies.get("@stryker-mutator/core")?.status !== "ok") {
+		missing.push("@stryker-mutator/core");
+	}
+	const hasRunner = [
+		"@stryker-mutator/vitest-runner",
+		"@stryker-mutator/jest-runner",
+	].some((name) => dependencies.get(name)?.status === "ok");
+	if (!hasRunner) {
+		missing.push("@stryker-mutator/vitest-runner");
+		missing.push("@stryker-mutator/jest-runner");
+	}
+	return missing;
+}
+
+export function inspectDependencyPreflight(
+	rootDir,
+	pkg,
+	{ coverageCommand = null, noCoverage = false } = {},
+) {
+	const packageManager = detectPackageManager(rootDir, pkg);
+	const plan = noCoverage
+		? null
+		: coveragePlan(rootDir, pkg, coverageCommand, packageManager.manager);
+	const dependencyNames = new Set([
+		"typescript",
+		"vitest",
+		"jest",
+		...VITEST_COVERAGE_PROVIDERS,
+		...STRYKER_PACKAGES,
+	]);
+	const dependencies = new Map(
+		[...dependencyNames].map((name) => [
+			name,
+			dependencyState(rootDir, pkg, name),
+		]),
+	);
+	const missingCoverage = [];
+	if (plan?.runner === "vitest") {
+		if (dependencies.get("vitest")?.status !== "ok") {
+			missingCoverage.push("vitest");
+		}
+		missingCoverage.push(...missingVitestCoverageProviders(dependencies));
+	} else if (plan?.runner === "jest") {
+		if (dependencies.get("jest")?.status !== "ok") missingCoverage.push("jest");
+	}
+	return {
+		packageManager,
+		coverage: {
+			plan,
+			missing: missingCoverage,
+		},
+		mutation: {
+			missing: missingMutationPackages(dependencies),
+		},
+		dependencies,
+	};
+}
+
+export function formatDependencyPreflight(preflight) {
+	const lines = ["Dependency Preflight", "===================="];
+	const pm = preflight.packageManager;
+	lines.push(`package manager: ${pm.manager}`);
+	for (const problem of pm.problems) {
+		lines.push(`package manager warning: ${problem}`);
+	}
+	lines.push("coverage:");
+	if (!preflight.coverage.plan) {
+		lines.push("  command: none detected");
+	} else {
+		const { command, source, script, runner } = preflight.coverage.plan;
+		lines.push(`  command: ${command} (${source})`);
+		if (script) lines.push(`  script: ${script}`);
+		lines.push(`  runner: ${runner ?? "unknown"}`);
+	}
+	for (const name of [
+		"typescript",
+		"vitest",
+		"jest",
+		...VITEST_COVERAGE_PROVIDERS,
+	]) {
+		const dep = preflight.dependencies.get(name);
+		if (dep) lines.push(`  - ${name}: ${dep.status}`);
+	}
+	if (preflight.coverage.missing.length > 0) {
+		lines.push(
+			`  coverage gate: missing ${preflight.coverage.missing.join(", ")}; coverage will be N/A`,
+		);
+	}
+	lines.push("mutation:");
+	for (const name of STRYKER_PACKAGES) {
+		const dep = preflight.dependencies.get(name);
+		if (dep) lines.push(`  - ${name}: ${dep.status}`);
+	}
+	if (preflight.mutation.missing.length > 0) {
+		lines.push(
+			"  mutation gate: unavailable; do not claim mutation testing passed",
+		);
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+export function detectCoverageCommand(rootDir, pkg) {
+	const packageManager = detectPackageManager(rootDir, pkg);
+	return (
+		coveragePlan(rootDir, pkg, null, packageManager.manager)?.command ?? null
+	);
+}
+
+function runCoverage(
+	rootDir,
+	pkg,
+	overrideCommand,
+	stderr = process.stderr,
+	preflight = inspectDependencyPreflight(rootDir, pkg, {
+		coverageCommand: overrideCommand,
+	}),
+) {
+	const command = preflight.coverage.plan?.command ?? null;
+	if (preflight.packageManager.problems.length > 0) {
+		stderr.write(formatDependencyPreflight(preflight));
+		stderr.write(
+			"crap4ts: package-manager preflight failed; ask before changing lockfiles or package metadata\n",
+		);
+		return null;
+	}
 	if (!command) {
 		stderr.write(
 			"crap4ts: no coverage runner found (test:coverage script, vitest, or jest); reporting coverage as N/A\n",
+		);
+		return null;
+	}
+	if (preflight.coverage.missing.length > 0) {
+		stderr.write(formatDependencyPreflight(preflight));
+		stderr.write(
+			"crap4ts: coverage preflight failed; reporting coverage as N/A instead of running an under-provisioned runner\n",
 		);
 		return null;
 	}
@@ -670,6 +945,7 @@ options:
   --no-coverage          skip the coverage run; report N/A for coverage and CRAP
   --coverage-command CMD run CMD instead of the detected coverage command
                          (must produce coverage/coverage-final.json)
+  --preflight            print dependency preflight (coverage + mutation tooling) and exit
   --fail-over N          exit 2 when any CRAP score exceeds N
   path fragments         analyze only files whose relative path contains any fragment
 
@@ -682,6 +958,7 @@ export function parseCliArgs(args) {
 	let useChanged = false;
 	let noCoverage = false;
 	let coverageCommand = null;
+	let preflightOnly = false;
 	const fragments = [];
 
 	for (let i = 0; i < args.length; i += 1) {
@@ -702,6 +979,8 @@ export function parseCliArgs(args) {
 			useChanged = true;
 		} else if (arg === "--no-coverage") {
 			noCoverage = true;
+		} else if (arg === "--preflight") {
+			preflightOnly = true;
 		} else if (arg === "--coverage-command") {
 			coverageCommand = args[i + 1];
 			if (!coverageCommand) {
@@ -727,6 +1006,7 @@ export function parseCliArgs(args) {
 		useChanged,
 		noCoverage,
 		coverageCommand,
+		preflightOnly,
 		fragments,
 	};
 }
@@ -748,7 +1028,14 @@ export function main(
 		stderr.write(cli.message);
 		return 1;
 	}
-	const { failOver, useChanged, noCoverage, coverageCommand, fragments } = cli;
+	const {
+		failOver,
+		useChanged,
+		noCoverage,
+		coverageCommand,
+		preflightOnly,
+		fragments,
+	} = cli;
 
 	let pkg = null;
 	try {
@@ -756,6 +1043,15 @@ export function main(
 	} catch {
 		stderr.write("crap4ts: run from a project root containing package.json\n");
 		return 1;
+	}
+
+	const preflight = inspectDependencyPreflight(rootDir, pkg, {
+		coverageCommand,
+		noCoverage,
+	});
+	if (preflightOnly) {
+		stdout.write(formatDependencyPreflight(preflight));
+		return preflight.packageManager.problems.length > 0 ? 1 : 0;
 	}
 
 	let ts;
@@ -781,7 +1077,7 @@ export function main(
 
 	const coverageMap = noCoverage
 		? null
-		: runCoverage(rootDir, pkg, coverageCommand, stderr);
+		: runCoverage(rootDir, pkg, coverageCommand, stderr, preflight);
 
 	const functions = [];
 	for (const file of filtered) {

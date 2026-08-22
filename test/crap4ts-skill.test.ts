@@ -10,10 +10,13 @@ import {
 	buildRows,
 	computeCrap,
 	detectCoverageCommand,
+	detectPackageManager,
 	EXCLUDED_DIRS,
 	evaluateThreshold,
+	formatDependencyPreflight,
 	formatReport,
 	functionCoverage,
+	inspectDependencyPreflight,
 	main,
 	matchStatements,
 	ownFunctionSpans,
@@ -457,6 +460,65 @@ test("detectCoverageCommand prefers scripts then local runners", async () => {
 	}
 });
 
+test("dependency preflight reports missing coverage and mutation modules", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-preflight-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		await mkdir(join(dir, "node_modules", "vitest"), { recursive: true });
+		await mkdir(join(dir, "node_modules", "typescript"), {
+			recursive: true,
+		});
+		await write(join(dir, "node_modules", "vitest", "package.json"), "{}\n");
+		await write(
+			join(dir, "node_modules", "typescript", "package.json"),
+			"{}\n",
+		);
+		const pkg = {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: { typescript: "^5", vitest: "^4" },
+		};
+		const preflight = inspectDependencyPreflight(dir, pkg);
+		assert.deepEqual(preflight.packageManager.problems, []);
+		assert.deepEqual(preflight.coverage.missing, [
+			"@vitest/coverage-v8",
+			"@vitest/coverage-istanbul",
+		]);
+		assert.deepEqual(preflight.mutation.missing, [
+			"@stryker-mutator/core",
+			"@stryker-mutator/vitest-runner",
+			"@stryker-mutator/jest-runner",
+		]);
+		const report = formatDependencyPreflight(preflight);
+		for (const missing of [
+			"@vitest/coverage-v8: missing",
+			"@vitest/coverage-istanbul: missing",
+			"@stryker-mutator/core: missing",
+			"@stryker-mutator/vitest-runner: missing",
+			"@stryker-mutator/jest-runner: missing",
+		]) {
+			assert.ok(report.includes(missing), `missing preflight row: ${missing}`);
+		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight catches package-manager disagreement", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-pm-`);
+	const { rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		await write(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+		const detected = detectPackageManager(dir, {
+			packageManager: "npm@10.0.0",
+		});
+		assert.equal(detected.manager, "pnpm");
+		assert.match(detected.problems.join("\n"), /packageManager \(npm\)/);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("exported constants are populated Sets", () => {
 	assert.ok(SOURCE_EXTENSIONS instanceof Set);
 	assert.ok(EXCLUDED_DIRS instanceof Set);
@@ -584,6 +646,7 @@ test("parseCliArgs returns explicit help, error, and run results", () => {
 		useChanged: false,
 		noCoverage: false,
 		coverageCommand: null,
+		preflightOnly: false,
 		fragments: [],
 	});
 	assert.deepEqual(parseCliArgs(["--fail-over"]), {
@@ -606,6 +669,7 @@ test("parseCliArgs returns explicit help, error, and run results", () => {
 			"12",
 			"--coverage-command",
 			"node coverage.cjs",
+			"--preflight",
 			"src",
 			"lib",
 		]),
@@ -615,6 +679,7 @@ test("parseCliArgs returns explicit help, error, and run results", () => {
 			useChanged: true,
 			noCoverage: true,
 			coverageCommand: "node coverage.cjs",
+			preflightOnly: true,
 			fragments: ["src", "lib"],
 		},
 	);
@@ -643,6 +708,37 @@ test("main returns exit codes through injected I/O", async () => {
 	} finally {
 		const { rm } = await import("node:fs/promises");
 		await rm(emptyDir, { recursive: true, force: true });
+	}
+});
+
+test("main --preflight prints dependency readiness without requiring TypeScript", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-main-preflight-`);
+	try {
+		await writeFile(
+			join(dir, "package.json"),
+			JSON.stringify({
+				name: "fixture",
+				private: true,
+				scripts: { "test:coverage": "vitest run --coverage" },
+			}),
+			"utf8",
+		);
+		const result = runMainInProcess(dir, "--preflight");
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(result.stderr, "");
+		assert.match(result.stdout, /^Dependency Preflight$/m);
+		for (const missing of [
+			"@vitest/coverage-v8: missing",
+			"@vitest/coverage-istanbul: missing",
+			"@stryker-mutator/core: missing",
+			"@stryker-mutator/vitest-runner: missing",
+			"@stryker-mutator/jest-runner: missing",
+		]) {
+			assert.ok(result.stdout.includes(missing));
+		}
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
 	}
 });
 

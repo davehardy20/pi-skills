@@ -126,6 +126,27 @@ referenced package script before approving it as analysis/test-only.
 Do not pass installer commands, untrusted input, or commands whose side effects
 have not been reviewed.
 
+Always run the built-in preflight first when Dave asks for a report:
+
+```bash
+node <skill-dir>/scripts/crap4ts.mjs --preflight
+```
+
+Do not proceed straight to the report and do not infer readiness from memory. The
+preflight must explicitly list coverage and mutation dependencies, including:
+
+- `@vitest/coverage-v8`
+- `@vitest/coverage-istanbul`
+- `@stryker-mutator/core`
+- `@stryker-mutator/vitest-runner`
+- `@stryker-mutator/jest-runner`
+
+If both Vitest coverage providers are missing, coverage is unavailable until Dave
+approves installing one compatible provider; report N/A coverage rather than
+running Vitest coverage and treating the failure as a normal report. If Stryker
+core or the matching runner is missing, mutation is unavailable; say so before
+any function-improvement pass.
+
 Before running coverage or mutation testing, inspect the target repository rather
 than assuming packages are available:
 
