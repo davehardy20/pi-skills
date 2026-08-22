@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execSync, spawnSync } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import ts from "typescript";
@@ -713,6 +713,52 @@ test("package manager detection uses workspace metadata before npm fallback", as
 			conflicting.problems.join("\n"),
 			/packageManager \(npm\) disagrees with workspace metadata \(pnpm\)/,
 		);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("package-manager preflight blocks coverage command execution", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-pm-enforce-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		await mkdir(join(dir, "src"), { recursive: true });
+		await write(join(dir, "pnpm-workspace.yaml"), "packages: []\n");
+		await write(
+			join(dir, "package.json"),
+			JSON.stringify({
+				name: "fixture",
+				private: true,
+				packageManager: "npm@10.0.0",
+			}),
+			"utf8",
+		);
+		await write(
+			join(dir, "src", "core.ts"),
+			"export function f(a: number) { return a ? 1 : 0; }\n",
+			"utf8",
+		);
+		await write(
+			join(dir, "write-sentinel.cjs"),
+			'const fs = require("node:fs"); fs.writeFileSync("sentinel.txt", "ran");\n',
+			"utf8",
+		);
+
+		const result = runMainInProcess(
+			dir,
+			"--coverage-command",
+			"node write-sentinel.cjs",
+		);
+
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stderr, /package-manager preflight failed/);
+		let sentinelExists = true;
+		try {
+			await access(join(dir, "sentinel.txt"));
+		} catch {
+			sentinelExists = false;
+		}
+		assert.equal(sentinelExists, false);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
