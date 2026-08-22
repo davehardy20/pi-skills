@@ -754,6 +754,49 @@ test("dependency preflight accepts installed versions satisfying declared ranges
 	}
 });
 
+test("dependency preflight handles npm caret and tilde boundaries", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-semver-boundaries-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "1.9.9"],
+			["vitest", "0.2.5"],
+			["@vitest/coverage-v8", "0.2.5"],
+			["@stryker-mutator/core", "0.0.3"],
+			["@stryker-mutator/vitest-runner", "0.0.3"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "~1",
+				vitest: "^0.2.3",
+				"@vitest/coverage-v8": "^0.2.3",
+				"@stryker-mutator/core": "^0.0.3",
+				"@stryker-mutator/vitest-runner": "^0.0.3",
+			},
+		});
+		assert.equal(preflight.dependencies.get("typescript")?.status, "ok");
+		assert.equal(preflight.dependencies.get("vitest")?.status, "ok");
+		assert.equal(
+			preflight.dependencies.get("@stryker-mutator/core")?.status,
+			"ok",
+		);
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight catches package-manager disagreement", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-pm-`);
 	const { rm, writeFile: write } = await import("node:fs/promises");

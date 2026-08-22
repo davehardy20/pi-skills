@@ -566,11 +566,18 @@ function majorVersion(version) {
 	return match ? Number(match[0]) : null;
 }
 
-function parseVersionTuple(value) {
+function parseVersionParts(value) {
 	if (typeof value !== "string") return null;
-	const match = value.match(/v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+	const match = value.trim().match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
 	if (!match) return null;
-	return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
+	return {
+		tuple: [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)],
+		partCount: match[3] != null ? 3 : match[2] != null ? 2 : 1,
+	};
+}
+
+function parseVersionTuple(value) {
+	return parseVersionParts(value)?.tuple ?? null;
 }
 
 function compareVersionTuples(left, right) {
@@ -581,26 +588,53 @@ function compareVersionTuples(left, right) {
 	return 0;
 }
 
+function versionInRange(version, lower, upper) {
+	return (
+		compareVersionTuples(version, lower) >= 0 &&
+		compareVersionTuples(version, upper) < 0
+	);
+}
+
+function bareUpperBound({ tuple, partCount }) {
+	if (partCount === 1) return [tuple[0] + 1, 0, 0];
+	if (partCount === 2) return [tuple[0], tuple[1] + 1, 0];
+	return null;
+}
+
+function caretUpperBound({ tuple, partCount }) {
+	const [major, minor, patch] = tuple;
+	if (major > 0) return [major + 1, 0, 0];
+	if (partCount === 1) return [1, 0, 0];
+	if (minor > 0) return [0, minor + 1, 0];
+	if (partCount === 2) return [0, 1, 0];
+	return [0, 0, patch + 1];
+}
+
+function tildeUpperBound({ tuple, partCount }) {
+	const [major, minor] = tuple;
+	if (partCount === 1) return [major + 1, 0, 0];
+	return [major, minor + 1, 0];
+}
+
 function satisfiesComparator(version, comparator) {
-	const match = comparator.match(/^(>=|>|<=|<|=)?\s*v?(\d+(?:\.\d+){0,2})$/);
+	const match = comparator.match(/^(>=|>|<=|<|=)?\s*(v?\d+(?:\.\d+){0,2})$/);
 	if (!match) return null;
 	const operator = match[1] ?? null;
-	const targetText = match[2];
-	const target = parseVersionTuple(targetText);
-	if (!target) return null;
-	if (operator == null) {
-		const partCount = targetText.split(".").length;
-		if (partCount === 1) return version[0] === target[0];
-		if (partCount === 2) {
-			return version[0] === target[0] && version[1] === target[1];
-		}
+	const parsed = parseVersionParts(match[2]);
+	if (!parsed) return null;
+	const target = parsed.tuple;
+	if (operator == null || operator === "=") {
+		const upper = bareUpperBound(parsed);
+		return upper
+			? versionInRange(version, target, upper)
+			: compareVersionTuples(version, target) === 0;
 	}
 	const comparison = compareVersionTuples(version, target);
 	if (operator === ">=") return comparison >= 0;
 	if (operator === ">") return comparison > 0;
 	if (operator === "<=") return comparison <= 0;
 	if (operator === "<") return comparison < 0;
-	return comparison === 0;
+	return null;
 }
 
 function satisfiesDeclaredRange(installedVersion, declaredVersion) {
@@ -617,29 +651,23 @@ function satisfiesDeclaredRange(installedVersion, declaredVersion) {
 		let sawKnownComparator = false;
 		let satisfied = true;
 		for (const comparator of comparators) {
-			const caret = comparator.match(/^\^\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
-			if (caret) {
+			if (/^\^\s*v?\d+(?:\.\d+){0,2}$/.test(comparator)) {
 				sawKnownComparator = true;
 				sawAnyKnownComparator = true;
-				const lower = parseVersionTuple(caret[0].slice(1));
-				const upper = [Number(caret[1]) + 1, 0, 0];
+				const parsed = parseVersionParts(comparator.replace(/^\^\s*/, ""));
+				const upper = parsed ? caretUpperBound(parsed) : null;
 				satisfied =
-					lower != null &&
-					compareVersionTuples(installed, lower) >= 0 &&
-					compareVersionTuples(installed, upper) < 0;
+					parsed != null && versionInRange(installed, parsed.tuple, upper);
 				if (!satisfied) break;
 				continue;
 			}
-			const tilde = comparator.match(/^~\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
-			if (tilde) {
+			if (/^~\s*v?\d+(?:\.\d+){0,2}$/.test(comparator)) {
 				sawKnownComparator = true;
 				sawAnyKnownComparator = true;
-				const lower = parseVersionTuple(tilde[0].slice(1));
-				const upper = [Number(tilde[1]), Number(tilde[2] ?? 0) + 1, 0];
+				const parsed = parseVersionParts(comparator.replace(/^~\s*/, ""));
+				const upper = parsed ? tildeUpperBound(parsed) : null;
 				satisfied =
-					lower != null &&
-					compareVersionTuples(installed, lower) >= 0 &&
-					compareVersionTuples(installed, upper) < 0;
+					parsed != null && versionInRange(installed, parsed.tuple, upper);
 				if (!satisfied) break;
 				continue;
 			}
