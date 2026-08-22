@@ -565,7 +565,7 @@ test("dependency preflight follows delegated coverage scripts", async () => {
 			packageManager: "npm@10.0.0",
 			scripts: {
 				test: "vitest run",
-				"test:coverage": "npm run test -- --coverage",
+				"test:coverage": "npm test -- --coverage",
 			},
 			devDependencies: {
 				typescript: "^5",
@@ -681,6 +681,13 @@ test("package manager detection uses workspace metadata before npm fallback", as
 		const detected = detectPackageManager(dir, {});
 		assert.equal(detected.manager, "pnpm");
 		assert.deepEqual(detected.metadataManagers, ["pnpm"]);
+		const conflicting = detectPackageManager(dir, {
+			packageManager: "npm@10.0.0",
+		});
+		assert.match(
+			conflicting.problems.join("\n"),
+			/packageManager \(npm\) disagrees with workspace metadata \(pnpm\)/,
+		);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

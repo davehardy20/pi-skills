@@ -644,6 +644,7 @@ function delegatedScriptNames(command) {
 	const names = [];
 	const patterns = [
 		/\b(?:npm|pnpm|bun)\s+run\s+([\w:.-]+)/g,
+		/\b(?:npm|pnpm|bun)\s+(test|start|stop|restart)\b/g,
 		/\byarn\s+(?:run\s+)?([\w:.-]+)/g,
 	];
 	for (const pattern of patterns) {
@@ -702,6 +703,24 @@ export function detectPackageManager(rootDir, pkg) {
 	) {
 		problems.push(
 			`packageManager (${packageManager}) disagrees with lockfile (${lockManagers.join(", ")})`,
+		);
+	}
+	if (
+		packageManager &&
+		metadataManagers.length > 0 &&
+		!metadataManagers.includes(packageManager)
+	) {
+		problems.push(
+			`packageManager (${packageManager}) disagrees with workspace metadata (${metadataManagers.join(", ")})`,
+		);
+	}
+	if (
+		lockManagers.length > 0 &&
+		metadataManagers.length > 0 &&
+		!metadataManagers.some((manager) => lockManagers.includes(manager))
+	) {
+		problems.push(
+			`lockfile (${lockManagers.join(", ")}) disagrees with workspace metadata (${metadataManagers.join(", ")})`,
 		);
 	}
 	return {
