@@ -618,6 +618,49 @@ test("dependency preflight expands delegated override coverage commands", async 
 	}
 });
 
+test("dependency preflight detects package-manager direct vitest commands", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-direct-pm-preflight-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+
+		for (const coverageCommand of [
+			"pnpm vitest run --coverage",
+			"bun vitest --coverage",
+			"npm exec vitest -- --coverage",
+			"npx vitest run --coverage",
+		]) {
+			const preflight = inspectDependencyPreflight(
+				dir,
+				{
+					packageManager: "pnpm@9.0.0",
+					devDependencies: { typescript: "^5", vitest: "^4" },
+				},
+				{ coverageCommand },
+			);
+			assert.equal(preflight.coverage.plan?.runner, "vitest", coverageCommand);
+			assert.deepEqual(
+				preflight.coverage.missing,
+				["@vitest/coverage-v8", "@vitest/coverage-istanbul"],
+				coverageCommand,
+			);
+		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight does not execute Yarn Plug'n'Play loader code", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-pnp-preflight-`);
 	const { rm, writeFile: write } = await import("node:fs/promises");

@@ -782,6 +782,16 @@ function applyCompatibilityChecks(dependencies) {
 	}
 }
 
+function firstExecutableAfter(words, startIndex) {
+	for (let index = startIndex; index < words.length; index += 1) {
+		const word = words[index];
+		if (word === "--") continue;
+		if (word.startsWith("-")) continue;
+		return word.split("/").at(-1);
+	}
+	return null;
+}
+
 function commandExecutableTokens(command) {
 	const tokens = [];
 	for (const line of command.split(/\n+/)) {
@@ -790,10 +800,34 @@ function commandExecutableTokens(command) {
 			while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) words.shift();
 			const first = words[0];
 			if (!first) continue;
-			if (["npm", "pnpm", "bun"].includes(first)) continue;
+			if (["npm", "pnpm", "bun"].includes(first)) {
+				const second = words[1];
+				if (
+					(first === "npm" && ["exec", "x"].includes(second)) ||
+					(["pnpm", "bun"].includes(first) &&
+						["exec", "x", "dlx"].includes(second))
+				) {
+					const executable = firstExecutableAfter(words, 2);
+					if (executable) tokens.push(executable);
+				} else if (["pnpm", "bun"].includes(first) && second !== "run") {
+					const executable = firstExecutableAfter(words, 1);
+					if (
+						executable &&
+						!["test", "start", "stop", "restart"].includes(executable)
+					) {
+						tokens.push(executable);
+					}
+				}
+				continue;
+			}
+			if (["npx", "bunx"].includes(first)) {
+				const executable = firstExecutableAfter(words, 1);
+				if (executable) tokens.push(executable);
+				continue;
+			}
 			if (first === "yarn") {
 				const yarnExecutable = words[1] === "run" ? null : words[1];
-				if (yarnExecutable) tokens.push(yarnExecutable);
+				if (yarnExecutable) tokens.push(yarnExecutable.split("/").at(-1));
 				continue;
 			}
 			tokens.push(first.split("/").at(-1));
