@@ -560,10 +560,19 @@ function resolvedDependencyPath(rootDir, name) {
 	}
 }
 
-function hasPnpMetadata(rootDir) {
-	return [".pnp.cjs", ".pnp.loader.mjs"].some((file) =>
-		existsSync(join(rootDir, file)),
-	);
+function pnpDependencyPath(rootDir, name) {
+	const pnpPath = join(rootDir, ".pnp.cjs");
+	if (!existsSync(pnpPath)) return null;
+	try {
+		const pnp = createRequire(pnpPath)(pnpPath);
+		if (typeof pnp.resolveToUnqualified !== "function") return null;
+		const issuer = resolve(rootDir, "package.json");
+		return pnp.resolveToUnqualified(`${name}/package.json`, issuer, {
+			considerBuiltins: false,
+		});
+	} catch {
+		return null;
+	}
 }
 
 function majorVersion(version) {
@@ -578,10 +587,11 @@ function dependencyState(rootDir, pkg, name, packageManagerName) {
 	const localPath = localDependencyPath(rootDir, name);
 	const resolvedPath = existsSync(localPath)
 		? localPath
-		: resolvedDependencyPath(rootDir, name);
-	const pnpDeclared =
-		packageManagerName === "yarn" && hasPnpMetadata(rootDir) && declared;
-	const installed = resolvedPath != null || pnpDeclared;
+		: (resolvedDependencyPath(rootDir, name) ??
+			(packageManagerName === "yarn"
+				? pnpDependencyPath(rootDir, name)
+				: null));
+	const installed = resolvedPath != null;
 	const installedPackage = resolvedPath ? readPackageJson(resolvedPath) : null;
 	const installedVersion = installedPackage?.version ?? null;
 	let status = "missing";

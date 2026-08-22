@@ -585,9 +585,34 @@ test("dependency preflight follows delegated coverage scripts", async () => {
 
 test("dependency preflight supports Yarn Plug'n'Play declarations", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-pnp-preflight-`);
-	const { rm, writeFile: write } = await import("node:fs/promises");
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
 	try {
-		await write(join(dir, ".pnp.cjs"), "module.exports = {};\n");
+		const versions = new Map([
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+			["@vitest/coverage-v8", "4.0.0"],
+			["@stryker-mutator/core", "10.0.0"],
+			["@stryker-mutator/vitest-runner", "10.0.0"],
+		]);
+		for (const [name, version] of versions) {
+			await mkdir(join(dir, ".pnp-packages", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, ".pnp-packages", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		await write(
+			join(dir, ".pnp.cjs"),
+			`const path = require("node:path");
+			module.exports = {
+			  resolveToUnqualified(request) {
+			    return path.join(__dirname, ".pnp-packages", request);
+			  },
+			};
+			`,
+		);
 		const preflight = inspectDependencyPreflight(dir, {
 			packageManager: "yarn@4.0.0",
 			scripts: { "test:coverage": "yarn vitest run --coverage" },
