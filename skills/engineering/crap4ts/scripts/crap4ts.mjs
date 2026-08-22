@@ -653,18 +653,30 @@ function missingVitestCoverageProviders(dependencies) {
 	return hasProvider ? [] : VITEST_COVERAGE_PROVIDERS;
 }
 
-function missingMutationPackages(dependencies) {
+function missingMutationPackages(dependencies, runner) {
 	const missing = [];
 	if (dependencies.get("@stryker-mutator/core")?.status !== "ok") {
 		missing.push("@stryker-mutator/core");
 	}
-	const hasRunner = [
-		"@stryker-mutator/vitest-runner",
-		"@stryker-mutator/jest-runner",
-	].some((name) => dependencies.get(name)?.status === "ok");
-	if (!hasRunner) {
-		missing.push("@stryker-mutator/vitest-runner");
-		missing.push("@stryker-mutator/jest-runner");
+	const requiredRunners = [];
+	if (runner === "vitest") {
+		requiredRunners.push("@stryker-mutator/vitest-runner");
+	} else if (runner === "jest") {
+		requiredRunners.push("@stryker-mutator/jest-runner");
+	} else {
+		const hasAnyRunner = [
+			"@stryker-mutator/vitest-runner",
+			"@stryker-mutator/jest-runner",
+		].some((name) => dependencies.get(name)?.status === "ok");
+		if (!hasAnyRunner) {
+			requiredRunners.push(
+				"@stryker-mutator/vitest-runner",
+				"@stryker-mutator/jest-runner",
+			);
+		}
+	}
+	for (const name of requiredRunners) {
+		if (dependencies.get(name)?.status !== "ok") missing.push(name);
 	}
 	return missing;
 }
@@ -707,7 +719,7 @@ export function inspectDependencyPreflight(
 			missing: missingCoverage,
 		},
 		mutation: {
-			missing: missingMutationPackages(dependencies),
+			missing: missingMutationPackages(dependencies, plan?.runner ?? null),
 		},
 		dependencies,
 	};

@@ -487,7 +487,6 @@ test("dependency preflight reports missing coverage and mutation modules", async
 		assert.deepEqual(preflight.mutation.missing, [
 			"@stryker-mutator/core",
 			"@stryker-mutator/vitest-runner",
-			"@stryker-mutator/jest-runner",
 		]);
 		const report = formatDependencyPreflight(preflight);
 		for (const missing of [
@@ -499,6 +498,45 @@ test("dependency preflight reports missing coverage and mutation modules", async
 		]) {
 			assert.ok(report.includes(missing), `missing preflight row: ${missing}`);
 		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight requires the Stryker runner matching coverage", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-runner-preflight-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const name of [
+			"typescript",
+			"vitest",
+			"@vitest/coverage-v8",
+			"@stryker-mutator/core",
+			"@stryker-mutator/jest-runner",
+		]) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				"{}\n",
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "^5",
+				vitest: "^4",
+				"@vitest/coverage-v8": "^4",
+				"@stryker-mutator/core": "^10",
+				"@stryker-mutator/jest-runner": "^10",
+			},
+		});
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, [
+			"@stryker-mutator/vitest-runner",
+		]);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
