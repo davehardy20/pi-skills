@@ -1165,8 +1165,8 @@ test("dependency preflight follows command wrappers when inferring runner", asyn
 	}
 });
 
-test("dependency preflight expands Yarn run commands with options", async () => {
-	const dir = await mkdtemp(`${tmpdir()}/crap4ts-yarn-run-options-`);
+test("dependency preflight expands package-manager run commands with options", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-run-options-`);
 	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
 	try {
 		for (const [name, version] of [
@@ -1181,20 +1181,31 @@ test("dependency preflight expands Yarn run commands with options", async () => 
 				JSON.stringify({ version }),
 			);
 		}
-		const preflight = inspectDependencyPreflight(
-			dir,
-			{
-				packageManager: "yarn@4.14.1",
-				scripts: { cov: "vitest run --coverage" },
-				devDependencies: { typescript: "^5", vitest: "^4" },
-			},
-			{ coverageCommand: "yarn run --inspect cov" },
-		);
-		assert.equal(preflight.coverage.plan?.runner, "vitest");
-		assert.deepEqual(preflight.coverage.missing, [
-			"@vitest/coverage-v8",
-			"@vitest/coverage-istanbul",
-		]);
+		for (const coverageCommand of [
+			"yarn run --inspect cov",
+			"yarn --cwd packages/app run cov",
+			"yarn workspace packages/app run cov",
+			"npm --workspace packages/app run cov",
+			"npm run --workspace packages/app cov",
+			"npm -w packages/app run cov",
+			"pnpm --dir packages/app run cov",
+			"pnpm run --filter packages/app cov",
+		]) {
+			const preflight = inspectDependencyPreflight(
+				dir,
+				{
+					packageManager: "npm@10.0.0",
+					scripts: { cov: "vitest run --coverage" },
+					devDependencies: { typescript: "^5", vitest: "^4" },
+				},
+				{ coverageCommand },
+			);
+			assert.equal(preflight.coverage.plan?.runner, "vitest");
+			assert.deepEqual(preflight.coverage.missing, [
+				"@vitest/coverage-v8",
+				"@vitest/coverage-istanbul",
+			]);
+		}
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

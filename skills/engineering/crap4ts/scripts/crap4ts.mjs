@@ -946,14 +946,62 @@ function inferRunner(command) {
 	return null;
 }
 
-function scriptNameAfterRunOptions(words, startIndex) {
-	for (let index = startIndex; index < words.length; index += 1) {
+const RUN_SCRIPT_COMMANDS = new Set(["run", "run-script", "rum", "urn"]);
+
+const LIFECYCLE_SCRIPT_COMMANDS = new Set(["test", "start", "stop", "restart"]);
+
+const RUN_OPTIONS_WITH_OPERANDS = new Set([
+	"-C",
+	"--cwd",
+	"--dir",
+	"--filter",
+	"--prefix",
+	"--scope",
+	"--workspace",
+	"-F",
+	"-w",
+]);
+
+function runOptionConsumesNext(word) {
+	if (word.startsWith("--") && word.includes("=")) return false;
+	return RUN_OPTIONS_WITH_OPERANDS.has(word);
+}
+
+function skipRunOptions(words, startIndex) {
+	let index = startIndex;
+	for (; index < words.length; index += 1) {
 		const word = words[index];
-		if (word === "--") return words[index + 1] ?? null;
-		if (word.startsWith("-")) continue;
-		return word;
+		if (word === "--") return index + 1;
+		if (!word.startsWith("-")) return index;
+		if (runOptionConsumesNext(word)) index += 1;
 	}
-	return null;
+	return index;
+}
+
+function scriptNameAfterRunOptions(words, startIndex) {
+	return words[skipRunOptions(words, startIndex)] ?? null;
+}
+
+function packageManagerScriptName(words, packageManagerIndex) {
+	const commandIndex = skipRunOptions(words, packageManagerIndex + 1);
+	const command = words[commandIndex];
+	if (RUN_SCRIPT_COMMANDS.has(command)) {
+		return scriptNameAfterRunOptions(words, commandIndex + 1);
+	}
+	return LIFECYCLE_SCRIPT_COMMANDS.has(command) ? command : null;
+}
+
+function yarnScriptName(words, yarnIndex) {
+	let commandIndex = skipRunOptions(words, yarnIndex + 1);
+	let command = words[commandIndex];
+	if (command === "workspace") {
+		commandIndex = skipRunOptions(words, commandIndex + 2);
+		command = words[commandIndex];
+	}
+	if (command === "run")
+		return scriptNameAfterRunOptions(words, commandIndex + 1);
+	if (["exec", "dlx"].includes(command)) return null;
+	return command && !command.startsWith("-") ? command.split("/").at(-1) : null;
 }
 
 function delegatedScriptNames(command) {
@@ -964,22 +1012,12 @@ function delegatedScriptNames(command) {
 			const words = segment.trim().split(/\s+/).filter(Boolean);
 			for (let index = 0; index < words.length; index += 1) {
 				const word = words[index].split("/").at(-1);
-				const second = words[index + 1];
-				if (["npm", "pnpm", "bun"].includes(word)) {
-					if (["run", "run-script", "rum", "urn"].includes(second)) {
-						const scriptName = scriptNameAfterRunOptions(words, index + 2);
-						if (scriptName) names.push(scriptName);
-					} else if (["test", "start", "stop", "restart"].includes(second)) {
-						names.push(second);
-					}
-				} else if (word === "yarn") {
-					if (second === "run") {
-						const scriptName = scriptNameAfterRunOptions(words, index + 2);
-						if (scriptName) names.push(scriptName);
-					} else if (second && !second.startsWith("-")) {
-						names.push(second.split("/").at(-1));
-					}
-				}
+				const scriptName = ["npm", "pnpm", "bun"].includes(word)
+					? packageManagerScriptName(words, index)
+					: word === "yarn"
+						? yarnScriptName(words, index)
+						: null;
+				if (scriptName) names.push(scriptName);
 			}
 		}
 	}
