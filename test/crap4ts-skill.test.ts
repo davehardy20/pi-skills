@@ -499,6 +499,11 @@ test("dependency preflight reports missing coverage and mutation modules", async
 		]) {
 			assert.ok(report.includes(missing), `missing preflight row: ${missing}`);
 		}
+		assert.ok(
+			report.includes(
+				"mutation gate: missing @stryker-mutator/core, stryker config, @stryker-mutator/vitest-runner",
+			),
+		);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -1053,7 +1058,7 @@ test("dependency preflight reads Stryker config runner", async () => {
 			);
 		}
 		await write(
-			join(dir, "stryker.conf.json"),
+			join(dir, ".stryker.conf.json"),
 			JSON.stringify({ testRunner: "jest" }),
 		);
 		const preflight = inspectDependencyPreflight(dir, {

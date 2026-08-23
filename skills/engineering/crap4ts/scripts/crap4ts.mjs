@@ -1083,6 +1083,14 @@ function missingVitestCoverageProviders(dependencies) {
 }
 
 const STRYKER_CONFIG_FILES = [
+	".stryker.conf.json",
+	".stryker.conf.js",
+	".stryker.conf.cjs",
+	".stryker.conf.mjs",
+	".stryker.config.json",
+	".stryker.config.js",
+	".stryker.config.cjs",
+	".stryker.config.mjs",
 	"stryker.conf.json",
 	"stryker.conf.js",
 	"stryker.conf.cjs",
@@ -1235,7 +1243,7 @@ export function formatDependencyPreflight(preflight) {
 	}
 	if (preflight.mutation.missing.length > 0) {
 		lines.push(
-			"  mutation gate: unavailable; do not claim mutation testing passed",
+			`  mutation gate: missing ${preflight.mutation.missing.join(", ")}; do not claim mutation testing passed`,
 		);
 	}
 	return `${lines.join("\n")}\n`;
