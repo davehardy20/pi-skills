@@ -1192,14 +1192,30 @@ function workspacePackageDirByName(rootDir, name) {
 	);
 }
 
+function packageSelectorCandidates(value) {
+	if (!value) return [];
+	const trimmed = value.trim();
+	const selector = trimmed
+		.replace(/^!/, "")
+		.replace(/^\.\.\./, "")
+		.replace(/\^?\.\.\.$/, "")
+		.replace(/^\{(.+)\}$/, "$1");
+	return [...new Set([trimmed, selector].filter(Boolean))];
+}
+
 function packageDirCandidate(rootDir, currentDir, value) {
 	if (!value || isAbsolute(value)) return null;
-	const candidates = [
-		...new Set([resolve(currentDir, value), resolve(rootDir, value)]),
-	];
+	const values = packageSelectorCandidates(value);
+	const candidates = values.flatMap((candidate) => [
+		resolve(currentDir, candidate),
+		resolve(rootDir, candidate),
+	]);
 	return (
 		candidates.find((dir) => packageDirIfValid(rootDir, dir)) ??
-		workspacePackageDirByName(rootDir, value)
+		values
+			.map((candidate) => workspacePackageDirByName(rootDir, candidate))
+			.find(Boolean) ??
+		null
 	);
 }
 
@@ -1253,6 +1269,16 @@ function scriptArgsDelimiterIndex(words, startIndex) {
 	return delimiterIndex === -1 ? words.length : delimiterIndex;
 }
 
+function forwardedScriptArgs(words, delimiterIndex) {
+	return delimiterIndex < words.length
+		? words.slice(delimiterIndex + 1).join(" ")
+		: "";
+}
+
+function appendScriptArgs(script, args) {
+	return args ? `${script} ${args}` : script;
+}
+
 function packageManagerScriptReference(
 	rootDir,
 	currentDir,
@@ -1286,7 +1312,13 @@ function packageManagerScriptReference(
 			scriptArgsIndex,
 		);
 		const name = words[scriptIndex] ?? null;
-		return name ? { name, packageDir: packageDir ?? currentDir } : null;
+		return name
+			? {
+					name,
+					packageDir: packageDir ?? currentDir,
+					args: forwardedScriptArgs(words, scriptArgsIndex),
+				}
+			: null;
 	}
 	if (LIFECYCLE_SCRIPT_COMMANDS.has(command)) {
 		const scriptArgsIndex = scriptArgsDelimiterIndex(words, commandIndex + 1);
@@ -1297,7 +1329,11 @@ function packageManagerScriptReference(
 			commandIndex + 1,
 			scriptArgsIndex,
 		);
-		return { name: command, packageDir: packageDir ?? currentDir };
+		return {
+			name: command,
+			packageDir: packageDir ?? currentDir,
+			args: forwardedScriptArgs(words, scriptArgsIndex),
+		};
 	}
 	return null;
 }
@@ -1330,8 +1366,15 @@ function yarnScriptReference(rootDir, currentDir, words, yarnIndex) {
 			commandIndex + 1,
 			scriptIndex,
 		);
+		const scriptArgsIndex = scriptArgsDelimiterIndex(words, scriptIndex + 1);
 		const name = words[scriptIndex] ?? null;
-		return name ? { name, packageDir: packageDir ?? currentDir } : null;
+		return name
+			? {
+					name,
+					packageDir: packageDir ?? currentDir,
+					args: forwardedScriptArgs(words, scriptArgsIndex),
+				}
+			: null;
 	}
 	if (["exec", "dlx"].includes(command)) return null;
 	return command && !command.startsWith("-")
@@ -1455,7 +1498,7 @@ function scriptExpansionDetails(
 	let packageJson = directContexts[0]?.packageJson ?? null;
 	const packageContexts = [...directContexts];
 	for (const ref of delegatedScriptReferences(rootDir, command, currentDir)) {
-		const key = `${ref.packageDir}:${ref.name}`;
+		const key = `${ref.packageDir}:${ref.name}:${ref.args ?? ""}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
 		const scriptPkg =
@@ -1464,10 +1507,11 @@ function scriptExpansionDetails(
 				: readPackageJson(join(ref.packageDir, "package.json"));
 		const script = scriptPkg?.scripts?.[ref.name];
 		if (typeof script !== "string") continue;
+		const scriptCommand = appendScriptArgs(script, ref.args ?? "");
 		const child = scriptExpansionDetails(
 			rootDir,
 			scriptPkg ?? pkg,
-			script,
+			scriptCommand,
 			seen,
 			ref.packageDir,
 		);
@@ -1812,11 +1856,20 @@ export function inspectDependencyPreflight(
 		? plan.packageContexts
 		: [{ packageDir: dependencyRootDir, packageJson: dependencyPackage }];
 	const coverageDependenciesByContext = [];
-	if (plan?.runner === "vitest") {
+	if (plan?.runner) {
 		for (const context of coverageContexts) {
+			const contextCommand =
+				context.command ?? plan.expandedCommand ?? plan.command;
+			const contextRunner = inferRunner(contextCommand) ?? plan.runner;
+			const declaredNames =
+				contextRunner === "vitest"
+					? ["vitest", ...VITEST_COVERAGE_PROVIDERS]
+					: contextRunner === "jest"
+						? ["jest"]
+						: [];
 			const fallbackAllowed = !packageDeclaresAnyDependency(
 				context.packageJson,
-				["vitest", ...VITEST_COVERAGE_PROVIDERS],
+				declaredNames,
 			);
 			const coverageDependencies = buildDependencyMap(
 				context.packageDir,
@@ -1827,33 +1880,20 @@ export function inspectDependencyPreflight(
 				fallbackAllowed ? pkg : null,
 			);
 			coverageDependenciesByContext.push(coverageDependencies);
-			if (coverageDependencies.get("vitest")?.status !== "ok") {
-				missingCoverage.add("vitest");
-			}
-			for (const name of missingVitestCoverageProviders(coverageDependencies, {
-				...plan,
-				expandedCommand: context.command ?? plan.expandedCommand,
-			})) {
-				missingCoverage.add(name);
-			}
-		}
-	} else if (plan?.runner === "jest") {
-		for (const context of coverageContexts) {
-			const fallbackAllowed = !packageDeclaresAnyDependency(
-				context.packageJson,
-				["jest"],
-			);
-			const coverageDependencies = buildDependencyMap(
-				context.packageDir,
-				context.packageJson,
-				dependencyNames,
-				packageManager.manager,
-				fallbackAllowed ? rootDir : null,
-				fallbackAllowed ? pkg : null,
-			);
-			coverageDependenciesByContext.push(coverageDependencies);
-			if (coverageDependencies.get("jest")?.status !== "ok") {
-				missingCoverage.add("jest");
+			if (contextRunner === "vitest") {
+				if (coverageDependencies.get("vitest")?.status !== "ok") {
+					missingCoverage.add("vitest");
+				}
+				for (const name of missingVitestCoverageProviders(
+					coverageDependencies,
+					{ ...plan, expandedCommand: contextCommand },
+				)) {
+					missingCoverage.add(name);
+				}
+			} else if (contextRunner === "jest") {
+				if (coverageDependencies.get("jest")?.status !== "ok") {
+					missingCoverage.add("jest");
+				}
 			}
 		}
 	}

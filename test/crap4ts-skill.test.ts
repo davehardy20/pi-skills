@@ -633,6 +633,7 @@ test("dependency preflight follows workspace delegated coverage scripts", async 
 			"npm run coverage --workspace=@scope/a",
 			"npm test --workspace=@scope/a",
 			"pnpm --filter @scope/a run coverage",
+			"pnpm --filter @scope/a... run coverage",
 			"pnpm -F @scope/a run coverage",
 			"yarn workspace @scope/a run coverage",
 		]) {
@@ -867,7 +868,7 @@ test("dependency preflight validates every delegated workspace context", async (
 			join(dir, "packages", "b", "package.json"),
 			JSON.stringify({
 				name: "@scope/b",
-				scripts: { coverage: "vitest run --coverage.provider=istanbul" },
+				scripts: { coverage: "vitest run --coverage" },
 				devDependencies: {
 					vitest: "^4",
 					"@vitest/coverage-istanbul": "^4",
@@ -886,10 +887,30 @@ test("dependency preflight validates every delegated workspace context", async (
 			packageManager: "npm@10.0.0",
 			scripts: {
 				"test:coverage":
-					"npm --workspace @scope/a run coverage && npm --workspace @scope/b run coverage",
+					"npm --workspace @scope/a run coverage && npm --workspace @scope/b run coverage -- --coverage.provider=istanbul",
 			},
 		});
 		assert.deepEqual(mixedProviderPreflight.coverage.missing, []);
+
+		await write(
+			join(dir, "packages", "a", "package.json"),
+			JSON.stringify({
+				name: "@scope/a",
+				scripts: { coverage: "jest --coverage" },
+				devDependencies: { jest: "^30" },
+			}),
+		);
+		await writePackage(join(dir, "packages", "a"), "jest", {
+			version: "30.0.0",
+		});
+		const mixedRunnerPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: {
+				"test:coverage":
+					"npm --workspace @scope/a run coverage && npm --workspace @scope/b run coverage -- --coverage.provider=istanbul",
+			},
+		});
+		assert.deepEqual(mixedRunnerPreflight.coverage.missing, []);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
