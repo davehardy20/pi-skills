@@ -824,6 +824,35 @@ function dependencyStateWithFallback(
 	return fallback.declared || fallback.status === "ok" ? fallback : primary;
 }
 
+function packageDeclaresAnyDependency(pkg, names) {
+	return names.some((name) => declaredDependencyVersion(pkg, name) != null);
+}
+
+function buildDependencyMap(
+	rootDir,
+	pkg,
+	names,
+	packageManagerName,
+	fallbackRootDir = null,
+	fallbackPkg = null,
+) {
+	const dependencies = new Map(
+		[...names].map((name) => [
+			name,
+			dependencyStateWithFallback(
+				rootDir,
+				pkg,
+				name,
+				packageManagerName,
+				fallbackRootDir,
+				fallbackPkg,
+			),
+		]),
+	);
+	applyCompatibilityChecks(dependencies);
+	return dependencies;
+}
+
 function markPairMismatch(dependencies, leftName, rightName) {
 	const left = dependencies.get(leftName);
 	const right = dependencies.get(rightName);
@@ -1314,6 +1343,9 @@ function scriptExpansionDetails(
 	const parts = [command];
 	let packageDir = inferRunner(command) ? currentDir : null;
 	let packageJson = packageDir ? pkg : null;
+	const packageContexts = inferRunner(command)
+		? [{ packageDir: currentDir, packageJson: pkg }]
+		: [];
 	for (const ref of delegatedScriptReferences(rootDir, command, currentDir)) {
 		const key = `${ref.packageDir}:${ref.name}`;
 		if (seen.has(key)) continue;
@@ -1336,11 +1368,17 @@ function scriptExpansionDetails(
 			packageDir = child.packageDir;
 			packageJson = child.pkg;
 		}
+		packageContexts.push(...child.packageContexts);
 	}
 	return {
 		expandedCommand: parts.join("\n"),
 		packageDir: packageDir ?? currentDir,
 		pkg: packageJson ?? pkg,
+		packageContexts: [
+			...new Map(
+				packageContexts.map((context) => [context.packageDir, context]),
+			).values(),
+		],
 	};
 }
 
@@ -1429,6 +1467,7 @@ function coveragePlan(
 			expandedCommand: expansion.expandedCommand,
 			packageDir: expansion.packageDir,
 			packageJson: expansion.pkg,
+			packageContexts: expansion.packageContexts,
 			source: "override",
 			script: null,
 			runner: inferRunner(expansion.expandedCommand),
@@ -1442,6 +1481,7 @@ function coveragePlan(
 			expandedCommand: expansion.expandedCommand,
 			packageDir: expansion.packageDir,
 			packageJson: expansion.pkg,
+			packageContexts: expansion.packageContexts,
 			source: "script:test:coverage",
 			script,
 			runner: inferRunner(expansion.expandedCommand),
@@ -1455,6 +1495,7 @@ function coveragePlan(
 			expandedCommand: expansion.expandedCommand,
 			packageDir: expansion.packageDir,
 			packageJson: expansion.pkg,
+			packageContexts: expansion.packageContexts,
 			source: "script:coverage",
 			script,
 			runner: inferRunner(expansion.expandedCommand),
@@ -1472,6 +1513,7 @@ function coveragePlan(
 			expandedCommand: "./node_modules/.bin/vitest run --coverage",
 			packageDir: rootDir,
 			packageJson: pkg,
+			packageContexts: [{ packageDir: rootDir, packageJson: pkg }],
 		};
 	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "jest"))) {
@@ -1486,6 +1528,7 @@ function coveragePlan(
 			expandedCommand: "./node_modules/.bin/jest --coverage",
 			packageDir: rootDir,
 			packageJson: pkg,
+			packageContexts: [{ packageDir: rootDir, packageJson: pkg }],
 		};
 	}
 	return null;
@@ -1639,39 +1682,77 @@ export function inspectDependencyPreflight(
 		...VITEST_COVERAGE_PROVIDERS,
 		...STRYKER_PACKAGES,
 	]);
-	const dependencies = new Map(
-		[...dependencyNames].map((name) => [
-			name,
-			dependencyStateWithFallback(
-				dependencyRootDir,
-				dependencyPackage,
-				name,
-				packageManager.manager,
-				rootDir,
-				pkg,
-			),
-		]),
+	const dependencies = buildDependencyMap(
+		dependencyRootDir,
+		dependencyPackage,
+		dependencyNames,
+		packageManager.manager,
+		rootDir,
+		pkg,
 	);
-	applyCompatibilityChecks(dependencies);
-	const missingCoverage = [];
+	const mutationDependencies = buildDependencyMap(
+		rootDir,
+		pkg,
+		dependencyNames,
+		packageManager.manager,
+	);
+	const missingCoverage = new Set();
+	const coverageContexts = plan?.packageContexts?.length
+		? plan.packageContexts
+		: [{ packageDir: dependencyRootDir, packageJson: dependencyPackage }];
 	if (plan?.runner === "vitest") {
-		if (dependencies.get("vitest")?.status !== "ok") {
-			missingCoverage.push("vitest");
+		for (const context of coverageContexts) {
+			const fallbackAllowed = !packageDeclaresAnyDependency(
+				context.packageJson,
+				["vitest", ...VITEST_COVERAGE_PROVIDERS],
+			);
+			const coverageDependencies = buildDependencyMap(
+				context.packageDir,
+				context.packageJson,
+				dependencyNames,
+				packageManager.manager,
+				fallbackAllowed ? rootDir : null,
+				fallbackAllowed ? pkg : null,
+			);
+			if (coverageDependencies.get("vitest")?.status !== "ok") {
+				missingCoverage.add("vitest");
+			}
+			for (const name of missingVitestCoverageProviders(
+				coverageDependencies,
+				plan,
+			)) {
+				missingCoverage.add(name);
+			}
 		}
-		missingCoverage.push(...missingVitestCoverageProviders(dependencies, plan));
 	} else if (plan?.runner === "jest") {
-		if (dependencies.get("jest")?.status !== "ok") missingCoverage.push("jest");
+		for (const context of coverageContexts) {
+			const fallbackAllowed = !packageDeclaresAnyDependency(
+				context.packageJson,
+				["jest"],
+			);
+			const coverageDependencies = buildDependencyMap(
+				context.packageDir,
+				context.packageJson,
+				dependencyNames,
+				packageManager.manager,
+				fallbackAllowed ? rootDir : null,
+				fallbackAllowed ? pkg : null,
+			);
+			if (coverageDependencies.get("jest")?.status !== "ok") {
+				missingCoverage.add("jest");
+			}
+		}
 	}
 	return {
 		packageManager,
 		coverage: {
 			plan,
-			missing: missingCoverage,
+			missing: [...missingCoverage],
 		},
 		mutation: {
 			missing: missingMutationPackages(
 				rootDir,
-				dependencies,
+				mutationDependencies,
 				plan?.runner ?? null,
 			),
 		},
