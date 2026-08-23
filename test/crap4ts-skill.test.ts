@@ -680,7 +680,7 @@ test("dependency preflight follows nested workspace glob packages", async () => 
 		await mkdir(join(dir, "packages", "team", "a"), { recursive: true });
 		await write(
 			join(dir, "package.json"),
-			JSON.stringify({ workspaces: ["packages/*/*"] }),
+			JSON.stringify({ workspaces: ["packages\\*\\*"] }),
 		);
 		await write(
 			join(dir, "packages", "team", "a", "package.json"),

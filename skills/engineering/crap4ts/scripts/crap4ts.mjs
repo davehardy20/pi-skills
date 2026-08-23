@@ -1065,7 +1065,7 @@ function workspacePatternBase(pattern) {
 }
 
 function normalizeRelativePath(path) {
-	return path.replace(/\\\\/g, "/");
+	return path.replace(/\\/g, "/");
 }
 
 function escapeRegExpChar(char) {
