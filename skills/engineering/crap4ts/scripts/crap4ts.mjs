@@ -813,12 +813,45 @@ function applyCompatibilityChecks(dependencies) {
 	}
 }
 
+const WRAPPER_OPTIONS_WITH_OPERANDS = new Map([
+	["env", new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"])],
+	[
+		"dotenv",
+		new Set(["-e", "--env-file", "-c", "--config", "-v", "--variable"]),
+	],
+	[
+		"dotenv-cli",
+		new Set(["-e", "--env-file", "-c", "--config", "-v", "--variable"]),
+	],
+]);
+
 const COMMAND_WRAPPERS = new Set(["cross-env", "env", "dotenv", "dotenv-cli"]);
+
+function optionConsumesNext(optionsWithOperands, word) {
+	if (word.startsWith("--") && word.includes("=")) return false;
+	return optionsWithOperands.has(word);
+}
+
+function wrapperExecutableToken(words, wrapper) {
+	const optionsWithOperands =
+		WRAPPER_OPTIONS_WITH_OPERANDS.get(wrapper) ?? new Set();
+	for (let index = 1; index < words.length; index += 1) {
+		const word = words[index];
+		if (word === "--") return words[index + 1]?.split("/").at(-1) ?? null;
+		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
+		if (word.startsWith("-")) {
+			if (optionConsumesNext(optionsWithOperands, word)) index += 1;
+			continue;
+		}
+		return word.split("/").at(-1);
+	}
+	return null;
+}
 
 function firstExecutableAfter(words, startIndex) {
 	for (let index = startIndex; index < words.length; index += 1) {
 		const word = words[index];
-		if (word === "--") continue;
+		if (word === "--") return words[index + 1]?.split("/").at(-1) ?? null;
 		if (word.startsWith("-")) continue;
 		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
 		return word.split("/").at(-1);
@@ -865,7 +898,7 @@ function commandExecutableTokens(command) {
 				continue;
 			}
 			if (COMMAND_WRAPPERS.has(first)) {
-				const executable = firstExecutableAfter(words, 1);
+				const executable = wrapperExecutableToken(words, first);
 				if (executable) tokens.push(executable);
 				continue;
 			}

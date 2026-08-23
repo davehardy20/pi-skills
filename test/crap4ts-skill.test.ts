@@ -1012,18 +1012,22 @@ test("dependency preflight follows command wrappers when inferring runner", asyn
 				JSON.stringify({ version }),
 			);
 		}
-		const preflight = inspectDependencyPreflight(dir, {
-			packageManager: "npm@10.0.0",
-			scripts: {
-				"test:coverage": "cross-env NODE_ENV=test vitest run --coverage",
-			},
-			devDependencies: { typescript: "^5", vitest: "^4" },
-		});
-		assert.equal(preflight.coverage.plan?.runner, "vitest");
-		assert.deepEqual(preflight.coverage.missing, [
-			"@vitest/coverage-v8",
-			"@vitest/coverage-istanbul",
-		]);
+		for (const coverageCommand of [
+			"cross-env NODE_ENV=test vitest run --coverage",
+			"dotenv -e .env -- vitest run --coverage",
+			"env -u CI vitest run --coverage",
+		]) {
+			const preflight = inspectDependencyPreflight(dir, {
+				packageManager: "npm@10.0.0",
+				scripts: { "test:coverage": coverageCommand },
+				devDependencies: { typescript: "^5", vitest: "^4" },
+			});
+			assert.equal(preflight.coverage.plan?.runner, "vitest");
+			assert.deepEqual(preflight.coverage.missing, [
+				"@vitest/coverage-v8",
+				"@vitest/coverage-istanbul",
+			]);
+		}
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
