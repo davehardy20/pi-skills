@@ -668,8 +668,14 @@ function satisfiesComparator(version, comparator) {
 	}
 	const comparison = compareVersionTuples(version, target);
 	if (operator === ">=") return comparison >= 0;
-	if (operator === ">") return comparison > 0;
-	if (operator === "<=") return comparison <= 0;
+	if (operator === ">") {
+		const upper = bareUpperBound(parsed);
+		return upper ? compareVersionTuples(version, upper) >= 0 : comparison > 0;
+	}
+	if (operator === "<=") {
+		const upper = bareUpperBound(parsed);
+		return upper ? compareVersionTuples(version, upper) < 0 : comparison <= 0;
+	}
 	if (operator === "<") return comparison < 0;
 	return null;
 }
@@ -832,18 +838,26 @@ function optionConsumesNext(optionsWithOperands, word) {
 	return optionsWithOperands.has(word);
 }
 
+function executableFromWrapperCandidate(words, candidateIndex) {
+	const candidate = words[candidateIndex]?.split("/").at(-1) ?? null;
+	if (!candidate) return null;
+	return COMMAND_WRAPPERS.has(candidate)
+		? wrapperExecutableToken(words.slice(candidateIndex), candidate)
+		: candidate;
+}
+
 function wrapperExecutableToken(words, wrapper) {
 	const optionsWithOperands =
 		WRAPPER_OPTIONS_WITH_OPERANDS.get(wrapper) ?? new Set();
 	for (let index = 1; index < words.length; index += 1) {
 		const word = words[index];
-		if (word === "--") return words[index + 1]?.split("/").at(-1) ?? null;
+		if (word === "--") return executableFromWrapperCandidate(words, index + 1);
 		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
 		if (word.startsWith("-")) {
 			if (optionConsumesNext(optionsWithOperands, word)) index += 1;
 			continue;
 		}
-		return word.split("/").at(-1);
+		return executableFromWrapperCandidate(words, index);
 	}
 	return null;
 }
@@ -1134,7 +1148,9 @@ function detectStrykerConfig(rootDir) {
 		if (!isJavaScriptSyntaxValid(path)) {
 			return { present: true, valid: false, runner: null };
 		}
-		const match = text.match(/testRunner\s*:\s*["'](vitest|jest)["']/);
+		const match = text.match(
+			/(?:["']testRunner["']|testRunner)\s*:\s*["'](vitest|jest)["']/,
+		);
 		return { present: true, valid: true, runner: match?.[1] ?? null };
 	}
 	return { present: false, valid: false, runner: null };

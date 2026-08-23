@@ -821,6 +821,46 @@ test("dependency preflight accepts installed versions satisfying declared ranges
 	}
 });
 
+test("dependency preflight applies npm bounds to partial comparators", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-partial-comparator-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "4.9.9"],
+			["vitest", "4.1.0"],
+			["jest", "4.1.9"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		const preflight = inspectDependencyPreflight(
+			dir,
+			{
+				packageManager: "npm@10.0.0",
+				devDependencies: {
+					typescript: "<=4",
+					vitest: ">4",
+					jest: "<=4.1",
+				},
+			},
+			{ noCoverage: true },
+		);
+		assert.equal(preflight.dependencies.get("typescript")?.status, "ok");
+		assert.equal(
+			preflight.dependencies.get("vitest")?.status,
+			"version-mismatch",
+		);
+		assert.equal(preflight.dependencies.get("jest")?.status, "ok");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight handles npm caret and tilde boundaries", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-semver-boundaries-`);
 	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
@@ -1023,6 +1063,7 @@ test("dependency preflight follows command wrappers when inferring runner", asyn
 			"cross-env NODE_ENV=test vitest run --coverage",
 			"dotenv -e .env -- vitest run --coverage",
 			"env -u CI vitest run --coverage",
+			"cross-env NODE_ENV=test dotenv -e .env -- vitest run --coverage",
 		]) {
 			const preflight = inspectDependencyPreflight(dir, {
 				packageManager: "npm@10.0.0",
@@ -1062,6 +1103,49 @@ test("dependency preflight reads Stryker config runner", async () => {
 		await write(
 			join(dir, ".stryker.conf.json"),
 			JSON.stringify({ testRunner: "jest" }),
+		);
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "^5",
+				vitest: "^4",
+				"@vitest/coverage-v8": "^4",
+				"@stryker-mutator/core": "^10",
+				"@stryker-mutator/vitest-runner": "^10",
+			},
+		});
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, [
+			"@stryker-mutator/jest-runner",
+		]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight reads quoted JavaScript Stryker runner", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-stryker-quoted-config-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+			["@vitest/coverage-v8", "4.0.0"],
+			["@stryker-mutator/core", "10.0.0"],
+			["@stryker-mutator/vitest-runner", "10.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		await write(
+			join(dir, "stryker.conf.js"),
+			'module.exports = { "testRunner": "jest" };\n',
 		);
 		const preflight = inspectDependencyPreflight(dir, {
 			packageManager: "npm@10.0.0",
