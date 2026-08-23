@@ -489,7 +489,6 @@ test("dependency preflight reports missing coverage and mutation modules", async
 		const report = formatDependencyPreflight(preflight);
 		for (const missing of [
 			"@vitest/coverage-v8: missing",
-			"@vitest/coverage-istanbul: missing",
 			"@stryker-mutator/core: missing",
 			"@stryker-mutator/vitest-runner: missing",
 			"@stryker-mutator/jest-runner: missing",
@@ -939,6 +938,11 @@ test("dependency preflight validates every delegated workspace context", async (
 			},
 		});
 		assert.deepEqual(mixedRunnerPreflight.coverage.missing, []);
+		const mixedRunnerReport = formatDependencyPreflight(mixedRunnerPreflight);
+		assert.ok(mixedRunnerReport.includes("  - jest: ok"));
+		assert.ok(mixedRunnerReport.includes("  - vitest: ok"));
+		assert.ok(mixedRunnerReport.includes("  - @vitest/coverage-istanbul: ok"));
+		assert.ok(!mixedRunnerReport.includes("  - @vitest/coverage-v8: missing"));
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -2301,7 +2305,6 @@ test("main --preflight prints dependency readiness without requiring TypeScript"
 		assert.match(result.stdout, /^Dependency Preflight$/m);
 		for (const missing of [
 			"@vitest/coverage-v8: missing",
-			"@vitest/coverage-istanbul: missing",
 			"@stryker-mutator/core: missing",
 			"@stryker-mutator/vitest-runner: missing",
 			"@stryker-mutator/jest-runner: missing",

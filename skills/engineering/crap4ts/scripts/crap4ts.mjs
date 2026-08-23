@@ -1718,6 +1718,27 @@ function missingVitestCoverageProviders(dependencies, plan) {
 		: ["@vitest/coverage-v8"];
 }
 
+function relevantCoverageDependencyNames(runner, command) {
+	if (runner === "vitest") {
+		return new Set([
+			"typescript",
+			"vitest",
+			selectedVitestCoverageProvider({ expandedCommand: command }) ??
+				"@vitest/coverage-v8",
+		]);
+	}
+	if (runner === "jest") return new Set(["typescript", "jest"]);
+	return new Set(["typescript"]);
+}
+
+function pickDependencyStates(dependencies, names) {
+	return new Map(
+		[...names]
+			.map((name) => [name, dependencies.get(name)])
+			.filter((entry) => entry[1]),
+	);
+}
+
 const STRYKER_CONFIG_FILES = [
 	".stryker.conf.json",
 	".stryker.conf.js",
@@ -1888,7 +1909,12 @@ export function inspectDependencyPreflight(
 				fallbackAllowed ? rootDir : null,
 				fallbackAllowed ? pkg : null,
 			);
-			coverageDependenciesByContext.push(coverageDependencies);
+			coverageDependenciesByContext.push(
+				pickDependencyStates(
+					coverageDependencies,
+					relevantCoverageDependencyNames(contextRunner, contextCommand),
+				),
+			);
 			if (contextRunner === "vitest") {
 				if (coverageDependencies.get("vitest")?.status !== "ok") {
 					missingCoverage.add("vitest");
