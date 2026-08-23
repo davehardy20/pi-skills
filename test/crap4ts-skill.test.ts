@@ -665,6 +665,15 @@ test("dependency preflight follows workspace delegated coverage scripts", async 
 		assert.equal(pnpmPreflight.coverage.plan?.runner, "vitest");
 		assert.deepEqual(pnpmPreflight.coverage.missing, ["@vitest/coverage-v8"]);
 
+		const negatedPnpmPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "pnpm@10.0.0",
+			scripts: { "test:coverage": "pnpm --filter !@scope/a run coverage" },
+			devDependencies: { typescript: "^5", vitest: "^4" },
+		});
+
+		assert.equal(negatedPnpmPreflight.coverage.plan?.runner, null);
+		assert.deepEqual(negatedPnpmPreflight.coverage.missing, []);
+
 		await write(join(dir, "pnpm-workspace.yaml"), 'packages: ["packages/*"]\n');
 		const flowPnpmPreflight = inspectDependencyPreflight(dir, {
 			packageManager: "pnpm@10.0.0",
@@ -711,6 +720,25 @@ test("dependency preflight follows nested workspace glob packages", async () => 
 
 		assert.equal(preflight.coverage.plan?.runner, "vitest");
 		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight stops self-delegating scripts with forwarded args", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-self-delegating-`);
+	const { rm } = await import("node:fs/promises");
+	try {
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: {
+				"test:coverage":
+					"npm run test:coverage -- --coverage.provider=istanbul",
+			},
+		});
+
+		assert.equal(preflight.coverage.plan?.runner, null);
+		assert.deepEqual(preflight.coverage.missing, []);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

@@ -1195,8 +1195,8 @@ function workspacePackageDirByName(rootDir, name) {
 function packageSelectorCandidates(value) {
 	if (!value) return [];
 	const trimmed = value.trim();
+	if (trimmed.startsWith("!")) return [];
 	const selector = trimmed
-		.replace(/^!/, "")
 		.replace(/^\.\.\./, "")
 		.replace(/\^?\.\.\.$/, "")
 		.replace(/^\{(.+)\}$/, "$1");
@@ -1486,6 +1486,7 @@ function scriptExpansionDetails(
 	command,
 	seen = new Set(),
 	currentDir = rootDir,
+	activeScripts = new Set(),
 ) {
 	const parts = [command];
 	const directContexts = directRunnerPackageContexts(
@@ -1498,29 +1499,37 @@ function scriptExpansionDetails(
 	let packageJson = directContexts[0]?.packageJson ?? null;
 	const packageContexts = [...directContexts];
 	for (const ref of delegatedScriptReferences(rootDir, command, currentDir)) {
-		const key = `${ref.packageDir}:${ref.name}:${ref.args ?? ""}`;
-		if (seen.has(key)) continue;
-		seen.add(key);
 		const scriptPkg =
 			ref.packageDir === currentDir
 				? pkg
 				: readPackageJson(join(ref.packageDir, "package.json"));
 		const script = scriptPkg?.scripts?.[ref.name];
 		if (typeof script !== "string") continue;
-		const scriptCommand = appendScriptArgs(script, ref.args ?? "");
-		const child = scriptExpansionDetails(
-			rootDir,
-			scriptPkg ?? pkg,
-			scriptCommand,
-			seen,
-			ref.packageDir,
-		);
-		parts.push(child.expandedCommand);
-		if (!packageDir) {
-			packageDir = child.packageDir;
-			packageJson = child.pkg;
+		const activeKey = `${ref.packageDir}:${ref.name}`;
+		if (activeScripts.has(activeKey)) continue;
+		const key = `${activeKey}:${ref.args ?? ""}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		activeScripts.add(activeKey);
+		try {
+			const scriptCommand = appendScriptArgs(script, ref.args ?? "");
+			const child = scriptExpansionDetails(
+				rootDir,
+				scriptPkg ?? pkg,
+				scriptCommand,
+				seen,
+				ref.packageDir,
+				activeScripts,
+			);
+			parts.push(child.expandedCommand);
+			if (!packageDir) {
+				packageDir = child.packageDir;
+				packageJson = child.pkg;
+			}
+			packageContexts.push(...child.packageContexts);
+		} finally {
+			activeScripts.delete(activeKey);
 		}
-		packageContexts.push(...child.packageContexts);
 	}
 	return {
 		expandedCommand: parts.join("\n"),
