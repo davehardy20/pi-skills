@@ -663,6 +663,18 @@ test("dependency preflight follows workspace delegated coverage scripts", async 
 
 		assert.equal(pnpmPreflight.coverage.plan?.runner, "vitest");
 		assert.deepEqual(pnpmPreflight.coverage.missing, ["@vitest/coverage-v8"]);
+
+		await write(join(dir, "pnpm-workspace.yaml"), 'packages: ["packages/*"]\n');
+		const flowPnpmPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "pnpm@10.0.0",
+			scripts: { "test:coverage": "pnpm --filter @scope/a run coverage" },
+			devDependencies: { typescript: "^5", vitest: "^4" },
+		});
+
+		assert.equal(flowPnpmPreflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(flowPnpmPreflight.coverage.missing, [
+			"@vitest/coverage-v8",
+		]);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -772,6 +784,15 @@ test("dependency preflight validates delegated workspace dependencies locally", 
 		);
 		assert.equal(directPreflight.coverage.plan?.runner, "vitest");
 		assert.deepEqual(directPreflight.coverage.missing, []);
+		const yarnWorkspacePreflight = inspectDependencyPreflight(
+			dir,
+			{ packageManager: "yarn@4.0.0" },
+			{
+				coverageCommand: "yarn workspace @scope/a exec vitest --coverage",
+			},
+		);
+		assert.equal(yarnWorkspacePreflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(yarnWorkspacePreflight.coverage.missing, []);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -841,6 +862,34 @@ test("dependency preflight validates every delegated workspace context", async (
 		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
 		const report = formatDependencyPreflight(preflight);
 		assert.ok(report.includes("  - @vitest/coverage-v8: missing"));
+
+		await write(
+			join(dir, "packages", "b", "package.json"),
+			JSON.stringify({
+				name: "@scope/b",
+				scripts: { coverage: "vitest run --coverage.provider=istanbul" },
+				devDependencies: {
+					vitest: "^4",
+					"@vitest/coverage-istanbul": "^4",
+				},
+			}),
+		);
+		await writePackage(
+			join(dir, "packages", "b"),
+			"@vitest/coverage-istanbul",
+			{
+				version: "4.0.0",
+				peerDependencies: { vitest: "^4" },
+			},
+		);
+		const mixedProviderPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: {
+				"test:coverage":
+					"npm --workspace @scope/a run coverage && npm --workspace @scope/b run coverage",
+			},
+		});
+		assert.deepEqual(mixedProviderPreflight.coverage.missing, []);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

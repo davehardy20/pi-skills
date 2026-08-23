@@ -179,6 +179,7 @@ export interface DependencyPreflight {
 			packageContexts: Array<{
 				packageDir: string;
 				packageJson: Record<string, unknown>;
+				command?: string;
 			}>;
 			source: string;
 			script: string | null;

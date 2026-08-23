@@ -994,12 +994,17 @@ function commandExecutableTokens(command) {
 				continue;
 			}
 			if (first === "yarn") {
-				const second = words[1];
-				if (["exec", "dlx"].includes(second)) {
-					const executable = firstExecutableAfter(words, 2);
+				let commandIndex = skipRunOptions(words, 1);
+				let command = words[commandIndex];
+				if (command === "workspace") {
+					commandIndex = skipRunOptions(words, commandIndex + 2);
+					command = words[commandIndex];
+				}
+				if (["exec", "dlx"].includes(command)) {
+					const executable = firstExecutableAfter(words, commandIndex + 1);
 					if (executable) tokens.push(executable);
 				} else {
-					const yarnExecutable = second === "run" ? null : second;
+					const yarnExecutable = command === "run" ? null : command;
 					if (yarnExecutable) tokens.push(yarnExecutable.split("/").at(-1));
 				}
 				continue;
@@ -1078,6 +1083,13 @@ function packageDirIfValid(rootDir, candidateDir) {
 function pnpmWorkspacePatterns(rootDir) {
 	try {
 		const yaml = readFileSync(join(rootDir, "pnpm-workspace.yaml"), "utf8");
+		const flowMatch = yaml.match(/^packages:\s*\[([^\]]*)\]/m);
+		if (flowMatch) {
+			return flowMatch[1]
+				.split(",")
+				.map((entry) => entry.trim().replace(/^['"]|['"]$/g, ""))
+				.filter(Boolean);
+		}
 		const match = yaml.match(/^packages:\s*\n((?:\s*-\s*[^\n]+\n?)*)/m);
 		if (!match) return [];
 		return match[1]
@@ -1374,6 +1386,35 @@ function directRunnerPackageContexts(rootDir, command, currentDir, currentPkg) {
 						commandIndex + 1,
 						executableIndex,
 					);
+			} else if (first === "yarn") {
+				let commandIndex = skipRunOptions(words, 1);
+				let runnerCommand = words[commandIndex];
+				packageDir = packageDirFromRunOptions(
+					rootDir,
+					currentDir,
+					words,
+					1,
+					commandIndex,
+				);
+				if (runnerCommand === "workspace") {
+					packageDir = packageDirCandidate(
+						rootDir,
+						currentDir,
+						words[commandIndex + 1],
+					);
+					commandIndex = skipRunOptions(words, commandIndex + 2);
+					runnerCommand = words[commandIndex];
+				}
+				const executableIndex = ["exec", "dlx"].includes(runnerCommand)
+					? skipRunOptions(words, commandIndex + 1)
+					: commandIndex;
+				packageDir ??= packageDirFromRunOptions(
+					rootDir,
+					currentDir,
+					words,
+					commandIndex + 1,
+					executableIndex,
+				);
 			}
 			const resolvedDir = packageDir ?? currentDir;
 			contexts.push({
@@ -1382,11 +1423,16 @@ function directRunnerPackageContexts(rootDir, command, currentDir, currentPkg) {
 					resolvedDir === currentDir
 						? currentPkg
 						: readPackageJson(join(resolvedDir, "package.json")),
+				command: segment,
 			});
 		}
 	}
 	if (contexts.length === 0) {
-		contexts.push({ packageDir: currentDir, packageJson: currentPkg });
+		contexts.push({
+			packageDir: currentDir,
+			packageJson: currentPkg,
+			command,
+		});
 	}
 	return contexts.filter((context) => context.packageJson);
 }
@@ -1438,7 +1484,10 @@ function scriptExpansionDetails(
 		pkg: packageJson ?? pkg,
 		packageContexts: [
 			...new Map(
-				packageContexts.map((context) => [context.packageDir, context]),
+				packageContexts.map((context) => [
+					`${context.packageDir}:${context.command ?? ""}`,
+					context,
+				]),
 			).values(),
 		],
 	};
@@ -1781,10 +1830,10 @@ export function inspectDependencyPreflight(
 			if (coverageDependencies.get("vitest")?.status !== "ok") {
 				missingCoverage.add("vitest");
 			}
-			for (const name of missingVitestCoverageProviders(
-				coverageDependencies,
-				plan,
-			)) {
+			for (const name of missingVitestCoverageProviders(coverageDependencies, {
+				...plan,
+				expandedCommand: context.command ?? plan.expandedCommand,
+			})) {
 				missingCoverage.add(name);
 			}
 		}
