@@ -12,9 +12,22 @@
 // project's coverage command, analyze source files, print worst-first report.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+} from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import {
+	dirname,
+	extname,
+	isAbsolute,
+	join,
+	relative,
+	resolve,
+} from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -962,9 +975,149 @@ const RUN_OPTIONS_WITH_OPERANDS = new Set([
 	"-w",
 ]);
 
+function runOptionName(word) {
+	return word.startsWith("--") ? word.split("=")[0] : word;
+}
+
 function runOptionConsumesNext(word) {
 	if (word.startsWith("--") && word.includes("=")) return false;
-	return RUN_OPTIONS_WITH_OPERANDS.has(word);
+	return RUN_OPTIONS_WITH_OPERANDS.has(runOptionName(word));
+}
+
+function optionValue(words, index) {
+	const word = words[index];
+	if (word.startsWith("--") && word.includes("=")) {
+		return word.slice(word.indexOf("=") + 1);
+	}
+	return words[index + 1] ?? null;
+}
+
+function isInsideDirectory(rootDir, candidateDir) {
+	try {
+		const rootReal = realpathSync(rootDir);
+		const candidateReal = realpathSync(candidateDir);
+		const rel = relative(rootReal, candidateReal);
+		return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+	} catch {
+		return false;
+	}
+}
+
+function packageDirIfValid(rootDir, candidateDir) {
+	return isInsideDirectory(rootDir, candidateDir) &&
+		existsSync(join(candidateDir, "package.json"))
+		? candidateDir
+		: null;
+}
+
+function pnpmWorkspacePatterns(rootDir) {
+	try {
+		const yaml = readFileSync(join(rootDir, "pnpm-workspace.yaml"), "utf8");
+		const match = yaml.match(/^packages:\s*\n((?:\s*-\s*[^\n]+\n?)*)/m);
+		if (!match) return [];
+		return match[1]
+			.split(/\n+/)
+			.map((line) => line.match(/^\s*-\s*["']?([^"'#]+)["']?/u)?.[1]?.trim())
+			.filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
+function workspacePatterns(rootDir) {
+	const pkg = readPackageJson(join(rootDir, "package.json"));
+	const workspaces = pkg?.workspaces;
+	const packagePatterns = Array.isArray(workspaces)
+		? workspaces
+		: Array.isArray(workspaces?.packages)
+			? workspaces.packages
+			: [];
+	return [...new Set([...packagePatterns, ...pnpmWorkspacePatterns(rootDir)])];
+}
+
+function workspacePatternBase(pattern) {
+	if (typeof pattern !== "string") return null;
+	const firstGlob = pattern.search(/[*{[]/);
+	const base = firstGlob === -1 ? pattern : pattern.slice(0, firstGlob);
+	return base.replace(/[\\/]*$/, "") || ".";
+}
+
+function workspacePackageDirs(rootDir) {
+	const dirs = [];
+	for (const pattern of workspacePatterns(rootDir)) {
+		const base = workspacePatternBase(pattern);
+		if (!base || isAbsolute(base)) continue;
+		const baseDir = resolve(rootDir, base);
+		if (!isInsideDirectory(rootDir, baseDir)) continue;
+		if (!pattern.includes("*")) {
+			const dir = packageDirIfValid(rootDir, baseDir);
+			if (dir) dirs.push(dir);
+			continue;
+		}
+		try {
+			for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
+				if (!entry.isDirectory()) continue;
+				const dir = packageDirIfValid(rootDir, join(baseDir, entry.name));
+				if (dir) dirs.push(dir);
+			}
+		} catch {
+			// Ignore missing or unreadable workspace pattern roots.
+		}
+	}
+	return dirs;
+}
+
+function workspacePackageDirByName(rootDir, name) {
+	return (
+		workspacePackageDirs(rootDir).find(
+			(dir) => readPackageJson(join(dir, "package.json"))?.name === name,
+		) ?? null
+	);
+}
+
+function packageDirCandidate(rootDir, currentDir, value) {
+	if (!value || isAbsolute(value)) return null;
+	const candidates = [
+		...new Set([resolve(currentDir, value), resolve(rootDir, value)]),
+	];
+	return (
+		candidates.find((dir) => packageDirIfValid(rootDir, dir)) ??
+		workspacePackageDirByName(rootDir, value)
+	);
+}
+
+function packageDirFromRunOptions(
+	rootDir,
+	currentDir,
+	words,
+	startIndex,
+	endIndex,
+) {
+	for (let index = startIndex; index < endIndex; index += 1) {
+		const word = words[index];
+		const name = runOptionName(word);
+		if (
+			[
+				"--workspace",
+				"-w",
+				"--filter",
+				"-F",
+				"--cwd",
+				"--dir",
+				"--prefix",
+				"-C",
+			].includes(name)
+		) {
+			const dir = packageDirCandidate(
+				rootDir,
+				currentDir,
+				optionValue(words, index),
+			);
+			if (dir) return dir;
+		}
+		if (runOptionConsumesNext(word)) index += 1;
+	}
+	return null;
 }
 
 function skipRunOptions(words, startIndex) {
@@ -978,61 +1131,144 @@ function skipRunOptions(words, startIndex) {
 	return index;
 }
 
-function scriptNameAfterRunOptions(words, startIndex) {
-	return words[skipRunOptions(words, startIndex)] ?? null;
+function scriptArgsDelimiterIndex(words, startIndex) {
+	const delimiterIndex = words.indexOf("--", startIndex);
+	return delimiterIndex === -1 ? words.length : delimiterIndex;
 }
 
-function packageManagerScriptName(words, packageManagerIndex) {
+function packageManagerScriptReference(
+	rootDir,
+	currentDir,
+	words,
+	packageManagerIndex,
+) {
 	const commandIndex = skipRunOptions(words, packageManagerIndex + 1);
 	const command = words[commandIndex];
+	let packageDir = packageDirFromRunOptions(
+		rootDir,
+		currentDir,
+		words,
+		packageManagerIndex + 1,
+		commandIndex,
+	);
 	if (RUN_SCRIPT_COMMANDS.has(command)) {
-		return scriptNameAfterRunOptions(words, commandIndex + 1);
+		const scriptIndex = skipRunOptions(words, commandIndex + 1);
+		packageDir ??= packageDirFromRunOptions(
+			rootDir,
+			currentDir,
+			words,
+			commandIndex + 1,
+			scriptIndex,
+		);
+		const scriptArgsIndex = scriptArgsDelimiterIndex(words, scriptIndex + 1);
+		packageDir ??= packageDirFromRunOptions(
+			rootDir,
+			currentDir,
+			words,
+			scriptIndex + 1,
+			scriptArgsIndex,
+		);
+		const name = words[scriptIndex] ?? null;
+		return name ? { name, packageDir: packageDir ?? currentDir } : null;
 	}
-	return LIFECYCLE_SCRIPT_COMMANDS.has(command) ? command : null;
+	if (LIFECYCLE_SCRIPT_COMMANDS.has(command)) {
+		const scriptArgsIndex = scriptArgsDelimiterIndex(words, commandIndex + 1);
+		packageDir ??= packageDirFromRunOptions(
+			rootDir,
+			currentDir,
+			words,
+			commandIndex + 1,
+			scriptArgsIndex,
+		);
+		return { name: command, packageDir: packageDir ?? currentDir };
+	}
+	return null;
 }
 
-function yarnScriptName(words, yarnIndex) {
+function yarnScriptReference(rootDir, currentDir, words, yarnIndex) {
 	let commandIndex = skipRunOptions(words, yarnIndex + 1);
 	let command = words[commandIndex];
+	let packageDir = packageDirFromRunOptions(
+		rootDir,
+		currentDir,
+		words,
+		yarnIndex + 1,
+		commandIndex,
+	);
 	if (command === "workspace") {
+		packageDir = packageDirCandidate(
+			rootDir,
+			currentDir,
+			words[commandIndex + 1],
+		);
 		commandIndex = skipRunOptions(words, commandIndex + 2);
 		command = words[commandIndex];
 	}
-	if (command === "run")
-		return scriptNameAfterRunOptions(words, commandIndex + 1);
+	if (command === "run") {
+		const scriptIndex = skipRunOptions(words, commandIndex + 1);
+		packageDir ??= packageDirFromRunOptions(
+			rootDir,
+			currentDir,
+			words,
+			commandIndex + 1,
+			scriptIndex,
+		);
+		const name = words[scriptIndex] ?? null;
+		return name ? { name, packageDir: packageDir ?? currentDir } : null;
+	}
 	if (["exec", "dlx"].includes(command)) return null;
-	return command && !command.startsWith("-") ? command.split("/").at(-1) : null;
+	return command && !command.startsWith("-")
+		? { name: command.split("/").at(-1), packageDir: packageDir ?? currentDir }
+		: null;
 }
 
-function delegatedScriptNames(command) {
+function delegatedScriptReferences(rootDir, command, currentDir) {
 	if (!command) return [];
-	const names = [];
+	const refs = [];
 	for (const line of command.split(/\n+/)) {
 		for (const segment of line.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
 			const words = segment.trim().split(/\s+/).filter(Boolean);
 			for (let index = 0; index < words.length; index += 1) {
 				const word = words[index].split("/").at(-1);
-				const scriptName = ["npm", "pnpm", "bun"].includes(word)
-					? packageManagerScriptName(words, index)
+				const ref = ["npm", "pnpm", "bun"].includes(word)
+					? packageManagerScriptReference(rootDir, currentDir, words, index)
 					: word === "yarn"
-						? yarnScriptName(words, index)
+						? yarnScriptReference(rootDir, currentDir, words, index)
 						: null;
-				if (scriptName) names.push(scriptName);
+				if (ref) refs.push(ref);
 			}
 		}
 	}
-	return names;
+	return refs;
 }
 
-function expandedScriptCommand(pkg, command, seen = new Set()) {
-	const scripts = pkg.scripts ?? {};
+function expandedScriptCommand(
+	rootDir,
+	pkg,
+	command,
+	seen = new Set(),
+	currentDir = rootDir,
+) {
 	const parts = [command];
-	for (const scriptName of delegatedScriptNames(command)) {
-		if (seen.has(scriptName)) continue;
-		seen.add(scriptName);
-		const script = scripts[scriptName];
+	for (const ref of delegatedScriptReferences(rootDir, command, currentDir)) {
+		const key = `${ref.packageDir}:${ref.name}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		const scriptPkg =
+			ref.packageDir === currentDir
+				? pkg
+				: readPackageJson(join(ref.packageDir, "package.json"));
+		const script = scriptPkg?.scripts?.[ref.name];
 		if (typeof script !== "string") continue;
-		parts.push(expandedScriptCommand(pkg, script, seen));
+		parts.push(
+			expandedScriptCommand(
+				rootDir,
+				scriptPkg ?? pkg,
+				script,
+				seen,
+				ref.packageDir,
+			),
+		);
 	}
 	return parts.join("\n");
 }
@@ -1116,7 +1352,11 @@ function coveragePlan(
 	const runCommand = (scriptName) =>
 		`${packageManagerName ?? detectPackageManager(rootDir, pkg).manager} run ${scriptName}`;
 	if (overrideCommand) {
-		const expandedCommand = expandedScriptCommand(pkg, overrideCommand);
+		const expandedCommand = expandedScriptCommand(
+			rootDir,
+			pkg,
+			overrideCommand,
+		);
 		return {
 			command: overrideCommand,
 			expandedCommand,
@@ -1127,7 +1367,7 @@ function coveragePlan(
 	}
 	if (typeof scripts["test:coverage"] === "string") {
 		const script = scripts["test:coverage"];
-		const expandedCommand = expandedScriptCommand(pkg, script);
+		const expandedCommand = expandedScriptCommand(rootDir, pkg, script);
 		return {
 			command: runCommand("test:coverage"),
 			expandedCommand,
@@ -1138,7 +1378,7 @@ function coveragePlan(
 	}
 	if (typeof scripts.coverage === "string") {
 		const script = scripts.coverage;
-		const expandedCommand = expandedScriptCommand(pkg, script);
+		const expandedCommand = expandedScriptCommand(rootDir, pkg, script);
 		return {
 			command: runCommand("coverage"),
 			expandedCommand,

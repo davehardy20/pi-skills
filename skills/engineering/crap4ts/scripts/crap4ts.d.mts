@@ -173,6 +173,7 @@ export interface DependencyPreflight {
 	coverage: {
 		plan: {
 			command: string;
+			expandedCommand: string;
 			source: string;
 			script: string | null;
 			runner: string | null;

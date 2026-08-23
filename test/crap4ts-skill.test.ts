@@ -594,6 +594,80 @@ test("dependency preflight follows delegated coverage scripts", async () => {
 	}
 });
 
+test("dependency preflight follows workspace delegated coverage scripts", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-workspace-delegated-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		await mkdir(join(dir, "packages", "a"), { recursive: true });
+		await write(
+			join(dir, "package.json"),
+			JSON.stringify({ workspaces: ["packages/*"] }),
+		);
+		await write(
+			join(dir, "packages", "a", "package.json"),
+			JSON.stringify({
+				name: "@scope/a",
+				scripts: {
+					coverage: "vitest run --coverage",
+					test: "vitest run --coverage",
+				},
+			}),
+		);
+
+		for (const command of [
+			"npm --workspace packages/a run coverage",
+			"npm --workspace @scope/a run coverage",
+			"npm run coverage --workspace packages/a",
+			"npm run coverage --workspace=@scope/a",
+			"npm test --workspace=@scope/a",
+			"pnpm --filter @scope/a run coverage",
+			"pnpm -F @scope/a run coverage",
+			"yarn workspace @scope/a run coverage",
+		]) {
+			const preflight = inspectDependencyPreflight(dir, {
+				packageManager: "npm@10.0.0",
+				scripts: { "test:coverage": command },
+				devDependencies: { typescript: "^5", vitest: "^4" },
+			});
+
+			assert.equal(preflight.coverage.plan?.runner, "vitest", command);
+			assert.deepEqual(
+				preflight.coverage.missing,
+				["@vitest/coverage-v8"],
+				command,
+			);
+		}
+
+		await write(join(dir, "package.json"), "{}\n");
+		await write(
+			join(dir, "pnpm-workspace.yaml"),
+			"packages:\n  - packages/*\n",
+		);
+		const pnpmPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "pnpm@10.0.0",
+			scripts: { "test:coverage": "pnpm --filter @scope/a run coverage" },
+			devDependencies: { typescript: "^5", vitest: "^4" },
+		});
+
+		assert.equal(pnpmPreflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(pnpmPreflight.coverage.missing, ["@vitest/coverage-v8"]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight expands delegated override coverage commands", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-override-preflight-`);
 	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
