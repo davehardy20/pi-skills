@@ -763,6 +763,15 @@ test("dependency preflight validates delegated workspace dependencies locally", 
 			preflight.dependencies.get("@vitest/coverage-v8")?.status,
 			"ok",
 		);
+		const directPreflight = inspectDependencyPreflight(
+			dir,
+			{ packageManager: "npm@10.0.0" },
+			{
+				coverageCommand: "npm --workspace @scope/a exec vitest -- --coverage",
+			},
+		);
+		assert.equal(directPreflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(directPreflight.coverage.missing, []);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

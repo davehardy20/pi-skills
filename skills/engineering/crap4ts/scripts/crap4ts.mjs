@@ -1347,6 +1347,50 @@ function delegatedScriptReferences(rootDir, command, currentDir) {
 	return refs;
 }
 
+function directRunnerPackageContexts(rootDir, command, currentDir, currentPkg) {
+	if (!inferRunner(command)) return [];
+	const contexts = [];
+	for (const line of command.split(/\n+/)) {
+		for (const segment of line.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
+			const words = segment.trim().split(/\s+/).filter(Boolean);
+			if (!inferRunner(segment)) continue;
+			let packageDir = null;
+			const first = words[0]?.split("/").at(-1);
+			if (["npm", "pnpm", "bun"].includes(first)) {
+				const commandIndex = skipRunOptions(words, 1);
+				const executableIndex = skipRunOptions(words, commandIndex + 1);
+				packageDir =
+					packageDirFromRunOptions(
+						rootDir,
+						currentDir,
+						words,
+						1,
+						commandIndex,
+					) ??
+					packageDirFromRunOptions(
+						rootDir,
+						currentDir,
+						words,
+						commandIndex + 1,
+						executableIndex,
+					);
+			}
+			const resolvedDir = packageDir ?? currentDir;
+			contexts.push({
+				packageDir: resolvedDir,
+				packageJson:
+					resolvedDir === currentDir
+						? currentPkg
+						: readPackageJson(join(resolvedDir, "package.json")),
+			});
+		}
+	}
+	if (contexts.length === 0) {
+		contexts.push({ packageDir: currentDir, packageJson: currentPkg });
+	}
+	return contexts.filter((context) => context.packageJson);
+}
+
 function scriptExpansionDetails(
 	rootDir,
 	pkg,
@@ -1355,11 +1399,15 @@ function scriptExpansionDetails(
 	currentDir = rootDir,
 ) {
 	const parts = [command];
-	let packageDir = inferRunner(command) ? currentDir : null;
-	let packageJson = packageDir ? pkg : null;
-	const packageContexts = inferRunner(command)
-		? [{ packageDir: currentDir, packageJson: pkg }]
-		: [];
+	const directContexts = directRunnerPackageContexts(
+		rootDir,
+		command,
+		currentDir,
+		pkg,
+	);
+	let packageDir = directContexts[0]?.packageDir ?? null;
+	let packageJson = directContexts[0]?.packageJson ?? null;
+	const packageContexts = [...directContexts];
 	for (const ref of delegatedScriptReferences(rootDir, command, currentDir)) {
 		const key = `${ref.packageDir}:${ref.name}`;
 		if (seen.has(key)) continue;
