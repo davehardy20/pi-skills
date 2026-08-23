@@ -1293,6 +1293,47 @@ test("dependency preflight rejects malformed JavaScript Stryker config", async (
 	}
 });
 
+test("dependency preflight rejects non-static JavaScript Stryker config", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-stryker-dynamic-config-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+			["@vitest/coverage-v8", "4.0.0"],
+			["@stryker-mutator/core", "10.0.0"],
+			["@stryker-mutator/vitest-runner", "10.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		await write(
+			join(dir, "stryker.conf.cjs"),
+			"const plugin = require('missing-plugin');\nmodule.exports = { testRunner: 'vitest', plugin };\n",
+		);
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "^5",
+				vitest: "^4",
+				"@vitest/coverage-v8": "^4",
+				"@stryker-mutator/core": "^10",
+				"@stryker-mutator/vitest-runner": "^10",
+			},
+		});
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, ["stryker config"]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight infers runner from executable commands only", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-runner-executable-`);
 	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");

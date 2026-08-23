@@ -1155,6 +1155,13 @@ function isJavaScriptSyntaxValid(path) {
 	return !result.error && result.status === 0;
 }
 
+function isStaticJavaScriptConfigUsable(text) {
+	return !(
+		/\brequire\s*\(|\bimport\s*\(|^\s*import\b|\bthrow\b/m.test(text) ||
+		!/\b(?:module\.exports\s*=|export\s+default)\s*\{/.test(text)
+	);
+}
+
 function detectStrykerConfig(rootDir) {
 	for (const file of STRYKER_CONFIG_FILES) {
 		const path = join(rootDir, file);
@@ -1172,7 +1179,10 @@ function detectStrykerConfig(rootDir) {
 				return { present: true, valid: false, runner: null };
 			}
 		}
-		if (!isJavaScriptSyntaxValid(path)) {
+		if (
+			!isJavaScriptSyntaxValid(path) ||
+			!isStaticJavaScriptConfigUsable(text)
+		) {
 			return { present: true, valid: false, runner: null };
 		}
 		const match = text.match(
