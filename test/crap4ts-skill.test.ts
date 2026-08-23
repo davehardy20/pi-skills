@@ -1085,6 +1085,48 @@ test("dependency preflight validates wildcard ranges", async () => {
 	}
 });
 
+test("dependency preflight fails closed on unsupported semver comparators", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-unsupported-semver-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, pkg] of [
+			["typescript", { version: "5.9.0" }],
+			["vitest", { version: "5.0.0" }],
+			[
+				"@vitest/coverage-v8",
+				{ version: "4.1.0", peerDependencies: { vitest: ">=4.0.0 <5.0.0-0" } },
+			],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify(pkg),
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "5",
+				vitest: "5",
+				"@vitest/coverage-v8": "^4",
+			},
+		});
+		assert.equal(
+			preflight.dependencies.get("@vitest/coverage-v8")?.status,
+			"version-mismatch",
+		);
+		assert.deepEqual(preflight.coverage.missing, [
+			"@vitest/coverage-v8",
+			"@vitest/coverage-istanbul",
+		]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight follows command wrappers when inferring runner", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-wrapper-runner-`);
 	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
@@ -1118,6 +1160,41 @@ test("dependency preflight follows command wrappers when inferring runner", asyn
 				"@vitest/coverage-istanbul",
 			]);
 		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight expands Yarn run commands with options", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-yarn-run-options-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		const preflight = inspectDependencyPreflight(
+			dir,
+			{
+				packageManager: "yarn@4.14.1",
+				scripts: { cov: "vitest run --coverage" },
+				devDependencies: { typescript: "^5", vitest: "^4" },
+			},
+			{ coverageCommand: "yarn run --inspect cov" },
+		);
+		assert.equal(preflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(preflight.coverage.missing, [
+			"@vitest/coverage-v8",
+			"@vitest/coverage-istanbul",
+		]);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

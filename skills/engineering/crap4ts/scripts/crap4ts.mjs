@@ -703,6 +703,7 @@ function satisfiesDeclaredRange(installedVersion, declaredVersion) {
 		const comparators = alternative.trim().split(/\s+/).filter(Boolean);
 		if (comparators.length === 0) continue;
 		let sawKnownComparator = false;
+		let sawUnknownComparator = false;
 		let satisfied = true;
 		for (const comparator of comparators) {
 			const wildcardResult = wildcardRangeResult(installed, comparator);
@@ -736,7 +737,10 @@ function satisfiesDeclaredRange(installedVersion, declaredVersion) {
 				continue;
 			}
 			const comparatorResult = satisfiesComparator(installed, comparator);
-			if (comparatorResult == null) continue;
+			if (comparatorResult == null) {
+				sawUnknownComparator = true;
+				break;
+			}
 			sawKnownComparator = true;
 			sawAnyKnownComparator = true;
 			if (!comparatorResult) {
@@ -744,7 +748,7 @@ function satisfiesDeclaredRange(installedVersion, declaredVersion) {
 				break;
 			}
 		}
-		if (sawKnownComparator && satisfied) return true;
+		if (sawKnownComparator && !sawUnknownComparator && satisfied) return true;
 	}
 	return sawAnyKnownComparator ? false : null;
 }
@@ -942,17 +946,41 @@ function inferRunner(command) {
 	return null;
 }
 
+function scriptNameAfterRunOptions(words, startIndex) {
+	for (let index = startIndex; index < words.length; index += 1) {
+		const word = words[index];
+		if (word === "--") return words[index + 1] ?? null;
+		if (word.startsWith("-")) continue;
+		return word;
+	}
+	return null;
+}
+
 function delegatedScriptNames(command) {
 	if (!command) return [];
 	const names = [];
-	const patterns = [
-		/\b(?:npm|pnpm|bun)\s+(?:run|run-script|rum|urn)\s+([\w:.-]+)/g,
-		/\b(?:npm|pnpm|bun)\s+(test|start|stop|restart)\b/g,
-		/\byarn\s+(?:run\s+)?([\w:.-]+)/g,
-	];
-	for (const pattern of patterns) {
-		for (const match of command.matchAll(pattern)) {
-			if (match[1] && match[1] !== "run") names.push(match[1]);
+	for (const line of command.split(/\n+/)) {
+		for (const segment of line.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
+			const words = segment.trim().split(/\s+/).filter(Boolean);
+			for (let index = 0; index < words.length; index += 1) {
+				const word = words[index].split("/").at(-1);
+				const second = words[index + 1];
+				if (["npm", "pnpm", "bun"].includes(word)) {
+					if (["run", "run-script", "rum", "urn"].includes(second)) {
+						const scriptName = scriptNameAfterRunOptions(words, index + 2);
+						if (scriptName) names.push(scriptName);
+					} else if (["test", "start", "stop", "restart"].includes(second)) {
+						names.push(second);
+					}
+				} else if (word === "yarn") {
+					if (second === "run") {
+						const scriptName = scriptNameAfterRunOptions(words, index + 2);
+						if (scriptName) names.push(scriptName);
+					} else if (second && !second.startsWith("-")) {
+						names.push(second.split("/").at(-1));
+					}
+				}
+			}
 		}
 	}
 	return names;
