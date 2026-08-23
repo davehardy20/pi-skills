@@ -18,6 +18,7 @@ export type CliParseResult =
 			useChanged: boolean;
 			noCoverage: boolean;
 			coverageCommand: string | null;
+			preflightOnly: boolean;
 			fragments: string[];
 	  };
 
@@ -144,6 +145,61 @@ export function detectCoverageCommand(
 	rootDir: string,
 	pkg: { scripts?: Record<string, unknown> },
 ): string | null;
+
+export interface PackageManagerPreflight {
+	manager: string;
+	lockManagers: string[];
+	packageManager: string | null;
+	metadataManagers: string[];
+	problems: string[];
+}
+
+export interface DependencyState {
+	name: string;
+	declared: boolean;
+	installed: boolean;
+	status:
+		| "ok"
+		| "missing"
+		| "declared-not-installed"
+		| "installed-not-declared"
+		| "version-mismatch";
+	declaredVersion?: unknown;
+	installedVersion?: unknown;
+}
+
+export interface DependencyPreflight {
+	packageManager: PackageManagerPreflight;
+	coverage: {
+		plan: {
+			command: string;
+			source: string;
+			script: string | null;
+			runner: string | null;
+		} | null;
+		missing: string[];
+	};
+	mutation: { missing: string[] };
+	dependencies: Map<string, DependencyState>;
+}
+
+/** Detects package-manager sources and lockfile/packageManager disagreement. */
+export function detectPackageManager(
+	rootDir: string,
+	pkg: { packageManager?: unknown },
+): PackageManagerPreflight;
+
+/** Inspects target-repo coverage and mutation dev dependency readiness. */
+export function inspectDependencyPreflight(
+	rootDir: string,
+	pkg: Record<string, unknown>,
+	options?: { coverageCommand?: string | null; noCoverage?: boolean },
+): DependencyPreflight;
+
+/** Formats the preflight report used by --preflight and failed coverage gates. */
+export function formatDependencyPreflight(
+	preflight: DependencyPreflight,
+): string;
 
 export function buildRows(
 	functions: CrapFunction[],

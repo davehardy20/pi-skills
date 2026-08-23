@@ -496,25 +496,940 @@ function loadTypeScript(rootDir) {
 	);
 }
 
-export function detectCoverageCommand(rootDir, pkg) {
-	const scripts = pkg.scripts ?? {};
-	if (typeof scripts["test:coverage"] === "string")
-		return "npm run test:coverage";
-	if (typeof scripts.coverage === "string") return "npm run coverage";
-	if (existsSync(join(rootDir, "node_modules", ".bin", "vitest"))) {
-		return "./node_modules/.bin/vitest run --coverage --coverage.reporter=json --coverage.reporter=text-summary";
-	}
-	if (existsSync(join(rootDir, "node_modules", ".bin", "jest"))) {
-		return "./node_modules/.bin/jest --coverage --coverageReporters=json --passWithNoTests";
+const PACKAGE_MANAGER_LOCKFILES = [
+	{ name: "pnpm", file: "pnpm-lock.yaml" },
+	{ name: "yarn", file: "yarn.lock" },
+	{ name: "bun", file: "bun.lock" },
+	{ name: "bun", file: "bun.lockb" },
+	{ name: "npm", file: "package-lock.json" },
+	{ name: "npm", file: "npm-shrinkwrap.json" },
+];
+
+const WORKSPACE_METADATA = [
+	{ name: "pnpm", file: "pnpm-workspace.yaml" },
+	{ name: "yarn", file: ".yarnrc.yml" },
+	{ name: "yarn", file: ".pnp.cjs" },
+	{ name: "yarn", file: ".pnp.loader.mjs" },
+	{ name: "bun", file: "bunfig.toml" },
+];
+
+const DEPENDENCY_FIELDS = [
+	"dependencies",
+	"devDependencies",
+	"peerDependencies",
+	"optionalDependencies",
+];
+
+const VITEST_COVERAGE_PROVIDERS = [
+	"@vitest/coverage-v8",
+	"@vitest/coverage-istanbul",
+];
+
+const VITEST_COVERAGE_PROVIDER_BY_NAME = new Map([
+	["v8", "@vitest/coverage-v8"],
+	["istanbul", "@vitest/coverage-istanbul"],
+]);
+
+const STRYKER_PACKAGES = [
+	"@stryker-mutator/core",
+	"@stryker-mutator/vitest-runner",
+	"@stryker-mutator/jest-runner",
+];
+
+function declaredDependencyVersion(pkg, name) {
+	for (const field of DEPENDENCY_FIELDS) {
+		const group = pkg[field] ?? {};
+		if (Object.hasOwn(group, name)) return group[name];
 	}
 	return null;
 }
 
-function runCoverage(rootDir, pkg, overrideCommand, stderr = process.stderr) {
-	const command = overrideCommand ?? detectCoverageCommand(rootDir, pkg);
+function localDependencyPath(rootDir, name) {
+	return resolve(rootDir, "node_modules", ...name.split("/"), "package.json");
+}
+
+function readPackageJson(path) {
+	try {
+		return JSON.parse(readFileSync(path, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+function resolvedDependencyPath(rootDir, name) {
+	try {
+		const req = createRequire(resolve(rootDir, "package.json"));
+		return req.resolve(`${name}/package.json`);
+	} catch {
+		return null;
+	}
+}
+
+function majorVersion(version) {
+	if (typeof version !== "string") return null;
+	const match = version.match(/\d+/);
+	return match ? Number(match[0]) : null;
+}
+
+function parseVersionParts(value) {
+	if (typeof value !== "string") return null;
+	const match = value.trim().match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
+	if (!match) return null;
+	return {
+		tuple: [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)],
+		partCount: match[3] != null ? 3 : match[2] != null ? 2 : 1,
+	};
+}
+
+function parseVersionTuple(value) {
+	return parseVersionParts(value)?.tuple ?? null;
+}
+
+function compareVersionTuples(left, right) {
+	for (let index = 0; index < 3; index += 1) {
+		if (left[index] > right[index]) return 1;
+		if (left[index] < right[index]) return -1;
+	}
+	return 0;
+}
+
+function versionInRange(version, lower, upper) {
+	return (
+		compareVersionTuples(version, lower) >= 0 &&
+		compareVersionTuples(version, upper) < 0
+	);
+}
+
+function bareUpperBound({ tuple, partCount }) {
+	if (partCount === 1) return [tuple[0] + 1, 0, 0];
+	if (partCount === 2) return [tuple[0], tuple[1] + 1, 0];
+	return null;
+}
+
+function caretUpperBound({ tuple, partCount }) {
+	const [major, minor, patch] = tuple;
+	if (major > 0) return [major + 1, 0, 0];
+	if (partCount === 1) return [1, 0, 0];
+	if (minor > 0) return [0, minor + 1, 0];
+	if (partCount === 2) return [0, 1, 0];
+	return [0, 0, patch + 1];
+}
+
+function tildeUpperBound({ tuple, partCount }) {
+	const [major, minor] = tuple;
+	if (partCount === 1) return [major + 1, 0, 0];
+	return [major, minor + 1, 0];
+}
+
+function hyphenRangeResult(version, alternative) {
+	const match = alternative.match(
+		/^\s*(v?\d+(?:\.\d+){0,2})\s+-\s+(v?\d+(?:\.\d+){0,2})\s*$/,
+	);
+	if (!match) return null;
+	const lower = parseVersionParts(match[1]);
+	const upper = parseVersionParts(match[2]);
+	if (!lower || !upper) return null;
+	if (compareVersionTuples(version, lower.tuple) < 0) return false;
+	if (upper.partCount < 3) {
+		const upperBound = bareUpperBound(upper);
+		return upperBound ? compareVersionTuples(version, upperBound) < 0 : null;
+	}
+	return compareVersionTuples(version, upper.tuple) <= 0;
+}
+
+function wildcardRangeResult(version, comparator) {
+	const match = comparator.match(
+		/^v?(\d+|x|\*)(?:\.(\d+|x|\*))?(?:\.(\d+|x|\*))?$/i,
+	);
+	if (!match) return null;
+	const parts = [match[1], match[2], match[3]].filter((part) => part != null);
+	const wildcardIndex = parts.findIndex((part) => /^[x*]$/i.test(part));
+	if (wildcardIndex === -1) return null;
+	if (wildcardIndex === 0) return true;
+	const lower = [0, 0, 0];
+	for (let index = 0; index < wildcardIndex; index += 1) {
+		lower[index] = Number(parts[index]);
+	}
+	const upper = [...lower];
+	upper[wildcardIndex - 1] += 1;
+	for (let index = wildcardIndex; index < 3; index += 1) {
+		upper[index] = 0;
+	}
+	return versionInRange(version, lower, upper);
+}
+
+function satisfiesComparator(version, comparator) {
+	const match = comparator.match(/^(>=|>|<=|<|=)?\s*(v?\d+(?:\.\d+){0,2})$/);
+	if (!match) return null;
+	const operator = match[1] ?? null;
+	const parsed = parseVersionParts(match[2]);
+	if (!parsed) return null;
+	const target = parsed.tuple;
+	if (operator == null || operator === "=") {
+		const upper = bareUpperBound(parsed);
+		return upper
+			? versionInRange(version, target, upper)
+			: compareVersionTuples(version, target) === 0;
+	}
+	const comparison = compareVersionTuples(version, target);
+	if (operator === ">=") return comparison >= 0;
+	if (operator === ">") {
+		const upper = bareUpperBound(parsed);
+		return upper ? compareVersionTuples(version, upper) >= 0 : comparison > 0;
+	}
+	if (operator === "<=") {
+		const upper = bareUpperBound(parsed);
+		return upper ? compareVersionTuples(version, upper) < 0 : comparison <= 0;
+	}
+	if (operator === "<") return comparison < 0;
+	return null;
+}
+
+function satisfiesDeclaredRange(installedVersion, declaredVersion) {
+	const installed = parseVersionTuple(installedVersion);
+	if (!installed || typeof declaredVersion !== "string") return null;
+	const range = declaredVersion.trim();
+	if (!range || ["*", "latest"].includes(range)) {
+		return range === "*" ? true : null;
+	}
+	let sawAnyKnownComparator = false;
+	for (const alternative of range.split("||")) {
+		const hyphenResult = hyphenRangeResult(installed, alternative);
+		if (hyphenResult != null) {
+			sawAnyKnownComparator = true;
+			if (hyphenResult) return true;
+			continue;
+		}
+		const comparators = alternative.trim().split(/\s+/).filter(Boolean);
+		if (comparators.length === 0) continue;
+		let sawKnownComparator = false;
+		let sawUnknownComparator = false;
+		let satisfied = true;
+		for (const comparator of comparators) {
+			const wildcardResult = wildcardRangeResult(installed, comparator);
+			if (wildcardResult != null) {
+				sawKnownComparator = true;
+				sawAnyKnownComparator = true;
+				if (!wildcardResult) {
+					satisfied = false;
+					break;
+				}
+				continue;
+			}
+			if (/^\^\s*v?\d+(?:\.\d+){0,2}$/.test(comparator)) {
+				sawKnownComparator = true;
+				sawAnyKnownComparator = true;
+				const parsed = parseVersionParts(comparator.replace(/^\^\s*/, ""));
+				const upper = parsed ? caretUpperBound(parsed) : null;
+				satisfied =
+					parsed != null && versionInRange(installed, parsed.tuple, upper);
+				if (!satisfied) break;
+				continue;
+			}
+			if (/^~\s*v?\d+(?:\.\d+){0,2}$/.test(comparator)) {
+				sawKnownComparator = true;
+				sawAnyKnownComparator = true;
+				const parsed = parseVersionParts(comparator.replace(/^~\s*/, ""));
+				const upper = parsed ? tildeUpperBound(parsed) : null;
+				satisfied =
+					parsed != null && versionInRange(installed, parsed.tuple, upper);
+				if (!satisfied) break;
+				continue;
+			}
+			const comparatorResult = satisfiesComparator(installed, comparator);
+			if (comparatorResult == null) {
+				sawUnknownComparator = true;
+				break;
+			}
+			sawKnownComparator = true;
+			sawAnyKnownComparator = true;
+			if (!comparatorResult) {
+				satisfied = false;
+				break;
+			}
+		}
+		if (sawKnownComparator && !sawUnknownComparator && satisfied) return true;
+	}
+	return sawAnyKnownComparator ? false : null;
+}
+
+function dependencyState(rootDir, pkg, name, packageManagerName) {
+	const declaredVersion = declaredDependencyVersion(pkg, name);
+	const declared = declaredVersion != null;
+	const localPath = localDependencyPath(rootDir, name);
+	// Do not require `.pnp.cjs` here: it is executable project code. The
+	// dependency preflight is an inspection gate, so Yarn PnP installs fail closed
+	// as declared-not-installed unless normal package.json resolution works.
+	void packageManagerName;
+	const resolvedPath = existsSync(localPath)
+		? localPath
+		: resolvedDependencyPath(rootDir, name);
+	const installed = resolvedPath != null;
+	const installedPackage = resolvedPath ? readPackageJson(resolvedPath) : null;
+	const installedVersion = installedPackage?.version ?? null;
+	let status = "missing";
+	if (declared && installed) status = "ok";
+	else if (declared) status = "declared-not-installed";
+	else if (installed) status = "installed-not-declared";
+	const satisfiesDeclared = satisfiesDeclaredRange(
+		installedVersion,
+		declaredVersion,
+	);
+	if (status === "ok" && satisfiesDeclared === false) {
+		status = "version-mismatch";
+	}
+	return {
+		name,
+		declared,
+		installed,
+		status,
+		declaredVersion,
+		installedVersion,
+		installedPackage,
+	};
+}
+
+function markPairMismatch(dependencies, leftName, rightName) {
+	const left = dependencies.get(leftName);
+	const right = dependencies.get(rightName);
+	if (left?.status !== "ok" || right?.status !== "ok") return;
+	if (
+		majorVersion(left.installedVersion) != null &&
+		majorVersion(right.installedVersion) != null &&
+		majorVersion(left.installedVersion) !== majorVersion(right.installedVersion)
+	) {
+		right.status = "version-mismatch";
+	}
+}
+
+function markVitestProviderMismatch(dependencies, providerName) {
+	const vitest = dependencies.get("vitest");
+	const provider = dependencies.get(providerName);
+	if (vitest?.status !== "ok" || provider?.status !== "ok") return;
+	const peerRange = provider.installedPackage?.peerDependencies?.vitest;
+	if (typeof peerRange === "string") {
+		if (satisfiesDeclaredRange(vitest.installedVersion, peerRange) === false) {
+			provider.status = "version-mismatch";
+		}
+		return;
+	}
+	markPairMismatch(dependencies, "vitest", providerName);
+}
+
+function applyCompatibilityChecks(dependencies) {
+	for (const provider of VITEST_COVERAGE_PROVIDERS) {
+		markVitestProviderMismatch(dependencies, provider);
+	}
+	for (const runner of [
+		"@stryker-mutator/vitest-runner",
+		"@stryker-mutator/jest-runner",
+	]) {
+		markPairMismatch(dependencies, "@stryker-mutator/core", runner);
+	}
+}
+
+const WRAPPER_OPTIONS_WITH_OPERANDS = new Map([
+	["env", new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"])],
+	[
+		"dotenv",
+		new Set(["-e", "--env-file", "-c", "--config", "-v", "--variable"]),
+	],
+	[
+		"dotenv-cli",
+		new Set(["-e", "--env-file", "-c", "--config", "-v", "--variable"]),
+	],
+]);
+
+const COMMAND_WRAPPERS = new Set(["cross-env", "env", "dotenv", "dotenv-cli"]);
+
+function optionConsumesNext(optionsWithOperands, word) {
+	if (word.startsWith("--") && word.includes("=")) return false;
+	return optionsWithOperands.has(word);
+}
+
+function executableFromWrapperCandidate(words, candidateIndex) {
+	const candidate = words[candidateIndex]?.split("/").at(-1) ?? null;
+	if (!candidate) return null;
+	return COMMAND_WRAPPERS.has(candidate)
+		? wrapperExecutableToken(words.slice(candidateIndex), candidate)
+		: candidate;
+}
+
+function wrapperExecutableToken(words, wrapper) {
+	const optionsWithOperands =
+		WRAPPER_OPTIONS_WITH_OPERANDS.get(wrapper) ?? new Set();
+	for (let index = 1; index < words.length; index += 1) {
+		const word = words[index];
+		if (word === "--") return executableFromWrapperCandidate(words, index + 1);
+		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
+		if (word.startsWith("-")) {
+			if (optionConsumesNext(optionsWithOperands, word)) index += 1;
+			continue;
+		}
+		return executableFromWrapperCandidate(words, index);
+	}
+	return null;
+}
+
+function firstExecutableAfter(words, startIndex) {
+	for (let index = startIndex; index < words.length; index += 1) {
+		const word = words[index];
+		if (word === "--") return words[index + 1]?.split("/").at(-1) ?? null;
+		if (word.startsWith("-")) continue;
+		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
+		return word.split("/").at(-1);
+	}
+	return null;
+}
+
+function commandExecutableTokens(command) {
+	const tokens = [];
+	for (const line of command.split(/\n+/)) {
+		for (const segment of line.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
+			const words = segment.trim().split(/\s+/).filter(Boolean);
+			while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) words.shift();
+			const first = words[0];
+			if (!first) continue;
+			if (["npm", "pnpm", "bun"].includes(first)) {
+				const second = words[1];
+				if (
+					(first === "npm" && ["exec", "x"].includes(second)) ||
+					(["pnpm", "bun"].includes(first) &&
+						["exec", "x", "dlx"].includes(second))
+				) {
+					const executable = firstExecutableAfter(words, 2);
+					if (executable) tokens.push(executable);
+				} else if (["pnpm", "bun"].includes(first) && second !== "run") {
+					const executable = firstExecutableAfter(words, 1);
+					if (
+						executable &&
+						!["test", "start", "stop", "restart"].includes(executable)
+					) {
+						tokens.push(executable);
+					}
+				}
+				continue;
+			}
+			if (["npx", "bunx"].includes(first)) {
+				const executable = firstExecutableAfter(words, 1);
+				if (executable) tokens.push(executable);
+				continue;
+			}
+			if (first === "yarn") {
+				const second = words[1];
+				if (["exec", "dlx"].includes(second)) {
+					const executable = firstExecutableAfter(words, 2);
+					if (executable) tokens.push(executable);
+				} else {
+					const yarnExecutable = second === "run" ? null : second;
+					if (yarnExecutable) tokens.push(yarnExecutable.split("/").at(-1));
+				}
+				continue;
+			}
+			if (COMMAND_WRAPPERS.has(first)) {
+				const executable = wrapperExecutableToken(words, first);
+				if (executable) tokens.push(executable);
+				continue;
+			}
+			tokens.push(first.split("/").at(-1));
+		}
+	}
+	return tokens;
+}
+
+function inferRunner(command) {
+	if (!command) return null;
+	for (const token of commandExecutableTokens(command)) {
+		if (token === "vitest") return "vitest";
+		if (token === "jest") return "jest";
+	}
+	return null;
+}
+
+const RUN_SCRIPT_COMMANDS = new Set(["run", "run-script", "rum", "urn"]);
+
+const LIFECYCLE_SCRIPT_COMMANDS = new Set(["test", "start", "stop", "restart"]);
+
+const RUN_OPTIONS_WITH_OPERANDS = new Set([
+	"-C",
+	"--cwd",
+	"--dir",
+	"--filter",
+	"--prefix",
+	"--scope",
+	"--workspace",
+	"-F",
+	"-w",
+]);
+
+function runOptionConsumesNext(word) {
+	if (word.startsWith("--") && word.includes("=")) return false;
+	return RUN_OPTIONS_WITH_OPERANDS.has(word);
+}
+
+function skipRunOptions(words, startIndex) {
+	let index = startIndex;
+	for (; index < words.length; index += 1) {
+		const word = words[index];
+		if (word === "--") return index + 1;
+		if (!word.startsWith("-")) return index;
+		if (runOptionConsumesNext(word)) index += 1;
+	}
+	return index;
+}
+
+function scriptNameAfterRunOptions(words, startIndex) {
+	return words[skipRunOptions(words, startIndex)] ?? null;
+}
+
+function packageManagerScriptName(words, packageManagerIndex) {
+	const commandIndex = skipRunOptions(words, packageManagerIndex + 1);
+	const command = words[commandIndex];
+	if (RUN_SCRIPT_COMMANDS.has(command)) {
+		return scriptNameAfterRunOptions(words, commandIndex + 1);
+	}
+	return LIFECYCLE_SCRIPT_COMMANDS.has(command) ? command : null;
+}
+
+function yarnScriptName(words, yarnIndex) {
+	let commandIndex = skipRunOptions(words, yarnIndex + 1);
+	let command = words[commandIndex];
+	if (command === "workspace") {
+		commandIndex = skipRunOptions(words, commandIndex + 2);
+		command = words[commandIndex];
+	}
+	if (command === "run")
+		return scriptNameAfterRunOptions(words, commandIndex + 1);
+	if (["exec", "dlx"].includes(command)) return null;
+	return command && !command.startsWith("-") ? command.split("/").at(-1) : null;
+}
+
+function delegatedScriptNames(command) {
+	if (!command) return [];
+	const names = [];
+	for (const line of command.split(/\n+/)) {
+		for (const segment of line.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
+			const words = segment.trim().split(/\s+/).filter(Boolean);
+			for (let index = 0; index < words.length; index += 1) {
+				const word = words[index].split("/").at(-1);
+				const scriptName = ["npm", "pnpm", "bun"].includes(word)
+					? packageManagerScriptName(words, index)
+					: word === "yarn"
+						? yarnScriptName(words, index)
+						: null;
+				if (scriptName) names.push(scriptName);
+			}
+		}
+	}
+	return names;
+}
+
+function expandedScriptCommand(pkg, command, seen = new Set()) {
+	const scripts = pkg.scripts ?? {};
+	const parts = [command];
+	for (const scriptName of delegatedScriptNames(command)) {
+		if (seen.has(scriptName)) continue;
+		seen.add(scriptName);
+		const script = scripts[scriptName];
+		if (typeof script !== "string") continue;
+		parts.push(expandedScriptCommand(pkg, script, seen));
+	}
+	return parts.join("\n");
+}
+
+function packageManagerFromField(pkg) {
+	if (typeof pkg.packageManager !== "string") return null;
+	const name = pkg.packageManager.split("@")[0];
+	return ["pnpm", "yarn", "bun", "npm"].includes(name) ? name : null;
+}
+
+export function detectPackageManager(rootDir, pkg) {
+	const lockManagers = [
+		...new Set(
+			PACKAGE_MANAGER_LOCKFILES.filter(({ file }) =>
+				existsSync(join(rootDir, file)),
+			).map(({ name }) => name),
+		),
+	];
+	const metadataManagers = [
+		...new Set(
+			WORKSPACE_METADATA.filter(({ file }) =>
+				existsSync(join(rootDir, file)),
+			).map(({ name }) => name),
+		),
+	];
+	const packageManager = packageManagerFromField(pkg);
+	const problems = [];
+	if (lockManagers.length > 1) {
+		problems.push(
+			`multiple lockfile package managers: ${lockManagers.join(", ")}`,
+		);
+	}
+	if (metadataManagers.length > 1) {
+		problems.push(
+			`multiple workspace metadata package managers: ${metadataManagers.join(", ")}`,
+		);
+	}
+	if (
+		packageManager &&
+		lockManagers.length > 0 &&
+		!lockManagers.includes(packageManager)
+	) {
+		problems.push(
+			`packageManager (${packageManager}) disagrees with lockfile (${lockManagers.join(", ")})`,
+		);
+	}
+	if (
+		packageManager &&
+		metadataManagers.length > 0 &&
+		!metadataManagers.includes(packageManager)
+	) {
+		problems.push(
+			`packageManager (${packageManager}) disagrees with workspace metadata (${metadataManagers.join(", ")})`,
+		);
+	}
+	if (
+		lockManagers.length > 0 &&
+		metadataManagers.length > 0 &&
+		!metadataManagers.some((manager) => lockManagers.includes(manager))
+	) {
+		problems.push(
+			`lockfile (${lockManagers.join(", ")}) disagrees with workspace metadata (${metadataManagers.join(", ")})`,
+		);
+	}
+	return {
+		manager: lockManagers[0] ?? packageManager ?? metadataManagers[0] ?? "npm",
+		lockManagers,
+		packageManager,
+		metadataManagers,
+		problems,
+	};
+}
+
+function coveragePlan(
+	rootDir,
+	pkg,
+	overrideCommand,
+	packageManagerName = null,
+) {
+	const scripts = pkg.scripts ?? {};
+	const runCommand = (scriptName) =>
+		`${packageManagerName ?? detectPackageManager(rootDir, pkg).manager} run ${scriptName}`;
+	if (overrideCommand) {
+		const expandedCommand = expandedScriptCommand(pkg, overrideCommand);
+		return {
+			command: overrideCommand,
+			expandedCommand,
+			source: "override",
+			script: null,
+			runner: inferRunner(expandedCommand),
+		};
+	}
+	if (typeof scripts["test:coverage"] === "string") {
+		const script = scripts["test:coverage"];
+		const expandedCommand = expandedScriptCommand(pkg, script);
+		return {
+			command: runCommand("test:coverage"),
+			expandedCommand,
+			source: "script:test:coverage",
+			script,
+			runner: inferRunner(expandedCommand),
+		};
+	}
+	if (typeof scripts.coverage === "string") {
+		const script = scripts.coverage;
+		const expandedCommand = expandedScriptCommand(pkg, script);
+		return {
+			command: runCommand("coverage"),
+			expandedCommand,
+			source: "script:coverage",
+			script,
+			runner: inferRunner(expandedCommand),
+		};
+	}
+	if (existsSync(join(rootDir, "node_modules", ".bin", "vitest"))) {
+		return {
+			command: [
+				"./node_modules/.bin/vitest run --coverage",
+				"--coverage.reporter=json --coverage.reporter=text-summary",
+			].join(" "),
+			source: "local-bin:vitest",
+			script: null,
+			runner: "vitest",
+			expandedCommand: "./node_modules/.bin/vitest run --coverage",
+		};
+	}
+	if (existsSync(join(rootDir, "node_modules", ".bin", "jest"))) {
+		return {
+			command: [
+				"./node_modules/.bin/jest --coverage",
+				"--coverageReporters=json --passWithNoTests",
+			].join(" "),
+			source: "local-bin:jest",
+			script: null,
+			runner: "jest",
+			expandedCommand: "./node_modules/.bin/jest --coverage",
+		};
+	}
+	return null;
+}
+
+function selectedVitestCoverageProvider(plan) {
+	const command = plan?.expandedCommand ?? plan?.command ?? "";
+	const match = command.match(
+		/--coverage\.(?:provider|coverageProvider)(?:=|\s+)(v8|istanbul)\b/,
+	);
+	return match ? VITEST_COVERAGE_PROVIDER_BY_NAME.get(match[1]) : null;
+}
+
+function missingVitestCoverageProviders(dependencies, plan) {
+	const selectedProvider = selectedVitestCoverageProvider(plan);
+	if (selectedProvider) {
+		return dependencies.get(selectedProvider)?.status === "ok"
+			? []
+			: [selectedProvider];
+	}
+	return dependencies.get("@vitest/coverage-v8")?.status === "ok"
+		? []
+		: ["@vitest/coverage-v8"];
+}
+
+const STRYKER_CONFIG_FILES = [
+	".stryker.conf.json",
+	".stryker.conf.js",
+	".stryker.conf.cjs",
+	".stryker.conf.mjs",
+	".stryker.config.json",
+	".stryker.config.js",
+	".stryker.config.cjs",
+	".stryker.config.mjs",
+	"stryker.conf.json",
+	"stryker.conf.js",
+	"stryker.conf.cjs",
+	"stryker.conf.mjs",
+	"stryker.config.json",
+	"stryker.config.js",
+	"stryker.config.cjs",
+	"stryker.config.mjs",
+];
+
+function isJavaScriptSyntaxValid(path) {
+	const result = spawnSync(process.execPath, ["--check", path], {
+		encoding: "utf8",
+	});
+	return !result.error && result.status === 0;
+}
+
+function isStaticJavaScriptConfigUsable(text) {
+	return !(
+		/\brequire\s*\(|\bimport\s*\(|^\s*import\b|\bthrow\b/m.test(text) ||
+		!/\b(?:module\.exports\s*=|export\s+default)\s*\{/.test(text)
+	);
+}
+
+function isPlainObject(value) {
+	return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function detectStrykerConfig(rootDir) {
+	for (const file of STRYKER_CONFIG_FILES) {
+		const path = join(rootDir, file);
+		if (!existsSync(path)) continue;
+		const text = readFileSync(path, "utf8");
+		if (file.endsWith(".json")) {
+			try {
+				const config = JSON.parse(text);
+				if (!isPlainObject(config)) {
+					return { present: true, valid: false, runner: null };
+				}
+				return {
+					present: true,
+					valid: true,
+					runner: config.testRunner ?? null,
+				};
+			} catch {
+				return { present: true, valid: false, runner: null };
+			}
+		}
+		if (
+			!isJavaScriptSyntaxValid(path) ||
+			!isStaticJavaScriptConfigUsable(text)
+		) {
+			return { present: true, valid: false, runner: null };
+		}
+		const match = text.match(
+			/(?:["']testRunner["']|testRunner)\s*:\s*["']([\w-]+)["']/,
+		);
+		return { present: true, valid: true, runner: match?.[1] ?? null };
+	}
+	return { present: false, valid: false, runner: null };
+}
+
+function missingMutationPackages(rootDir, dependencies, runner) {
+	const missing = [];
+	if (dependencies.get("@stryker-mutator/core")?.status !== "ok") {
+		missing.push("@stryker-mutator/core");
+	}
+	const config = detectStrykerConfig(rootDir);
+	if (!config.present || !config.valid) missing.push("stryker config");
+	let mutationRunner = runner;
+	if (config.present && config.valid && typeof config.runner === "string") {
+		if (["vitest", "jest"].includes(config.runner)) {
+			mutationRunner = config.runner;
+		} else {
+			missing.push(`unsupported Stryker runner: ${config.runner}`);
+			mutationRunner = null;
+		}
+	}
+	const requiredRunners = [];
+	if (mutationRunner === "vitest") {
+		requiredRunners.push("@stryker-mutator/vitest-runner");
+	} else if (mutationRunner === "jest") {
+		requiredRunners.push("@stryker-mutator/jest-runner");
+	} else {
+		const hasAnyRunner = [
+			"@stryker-mutator/vitest-runner",
+			"@stryker-mutator/jest-runner",
+		].some((name) => dependencies.get(name)?.status === "ok");
+		if (!hasAnyRunner) {
+			requiredRunners.push(
+				"@stryker-mutator/vitest-runner",
+				"@stryker-mutator/jest-runner",
+			);
+		}
+	}
+	for (const name of requiredRunners) {
+		if (dependencies.get(name)?.status !== "ok") missing.push(name);
+	}
+	return missing;
+}
+
+export function inspectDependencyPreflight(
+	rootDir,
+	pkg,
+	{ coverageCommand = null, noCoverage = false } = {},
+) {
+	const packageManager = detectPackageManager(rootDir, pkg);
+	const plan = noCoverage
+		? null
+		: coveragePlan(rootDir, pkg, coverageCommand, packageManager.manager);
+	const dependencyNames = new Set([
+		"typescript",
+		"vitest",
+		"jest",
+		...VITEST_COVERAGE_PROVIDERS,
+		...STRYKER_PACKAGES,
+	]);
+	const dependencies = new Map(
+		[...dependencyNames].map((name) => [
+			name,
+			dependencyState(rootDir, pkg, name, packageManager.manager),
+		]),
+	);
+	applyCompatibilityChecks(dependencies);
+	const missingCoverage = [];
+	if (plan?.runner === "vitest") {
+		if (dependencies.get("vitest")?.status !== "ok") {
+			missingCoverage.push("vitest");
+		}
+		missingCoverage.push(...missingVitestCoverageProviders(dependencies, plan));
+	} else if (plan?.runner === "jest") {
+		if (dependencies.get("jest")?.status !== "ok") missingCoverage.push("jest");
+	}
+	return {
+		packageManager,
+		coverage: {
+			plan,
+			missing: missingCoverage,
+		},
+		mutation: {
+			missing: missingMutationPackages(
+				rootDir,
+				dependencies,
+				plan?.runner ?? null,
+			),
+		},
+		dependencies,
+	};
+}
+
+export function formatDependencyPreflight(preflight) {
+	const lines = ["Dependency Preflight", "===================="];
+	const pm = preflight.packageManager;
+	lines.push(`package manager: ${pm.manager}`);
+	for (const problem of pm.problems) {
+		lines.push(`package manager warning: ${problem}`);
+	}
+	lines.push("coverage:");
+	if (!preflight.coverage.plan) {
+		lines.push("  command: none detected");
+	} else {
+		const { command, source, script, runner } = preflight.coverage.plan;
+		lines.push(`  command: ${command} (${source})`);
+		if (script) lines.push(`  script: ${script}`);
+		lines.push(`  runner: ${runner ?? "unknown"}`);
+	}
+	for (const name of [
+		"typescript",
+		"vitest",
+		"jest",
+		...VITEST_COVERAGE_PROVIDERS,
+	]) {
+		const dep = preflight.dependencies.get(name);
+		if (dep) lines.push(`  - ${name}: ${dep.status}`);
+	}
+	if (preflight.coverage.missing.length > 0) {
+		lines.push(
+			`  coverage gate: missing ${preflight.coverage.missing.join(", ")}; coverage will be N/A`,
+		);
+	}
+	lines.push("mutation:");
+	for (const name of STRYKER_PACKAGES) {
+		const dep = preflight.dependencies.get(name);
+		if (dep) lines.push(`  - ${name}: ${dep.status}`);
+	}
+	if (preflight.mutation.missing.length > 0) {
+		lines.push(
+			`  mutation gate: missing ${preflight.mutation.missing.join(", ")}; do not claim mutation testing passed`,
+		);
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+export function detectCoverageCommand(rootDir, pkg) {
+	const packageManager = detectPackageManager(rootDir, pkg);
+	return (
+		coveragePlan(rootDir, pkg, null, packageManager.manager)?.command ?? null
+	);
+}
+
+function runCoverage(
+	rootDir,
+	pkg,
+	overrideCommand,
+	stderr = process.stderr,
+	preflight = inspectDependencyPreflight(rootDir, pkg, {
+		coverageCommand: overrideCommand,
+	}),
+) {
+	const command = preflight.coverage.plan?.command ?? null;
+	if (preflight.packageManager.problems.length > 0) {
+		stderr.write(formatDependencyPreflight(preflight));
+		stderr.write(
+			"crap4ts: package-manager preflight failed; ask before changing lockfiles or package metadata\n",
+		);
+		return null;
+	}
 	if (!command) {
 		stderr.write(
 			"crap4ts: no coverage runner found (test:coverage script, vitest, or jest); reporting coverage as N/A\n",
+		);
+		return null;
+	}
+	if (preflight.coverage.missing.length > 0) {
+		stderr.write(formatDependencyPreflight(preflight));
+		stderr.write(
+			"crap4ts: coverage preflight failed; reporting coverage as N/A instead of running an under-provisioned runner\n",
 		);
 		return null;
 	}
@@ -670,6 +1585,7 @@ options:
   --no-coverage          skip the coverage run; report N/A for coverage and CRAP
   --coverage-command CMD run CMD instead of the detected coverage command
                          (must produce coverage/coverage-final.json)
+  --preflight            print dependency preflight (coverage + mutation tooling) and exit
   --fail-over N          exit 2 when any CRAP score exceeds N
   path fragments         analyze only files whose relative path contains any fragment
 
@@ -682,6 +1598,7 @@ export function parseCliArgs(args) {
 	let useChanged = false;
 	let noCoverage = false;
 	let coverageCommand = null;
+	let preflightOnly = false;
 	const fragments = [];
 
 	for (let i = 0; i < args.length; i += 1) {
@@ -702,6 +1619,8 @@ export function parseCliArgs(args) {
 			useChanged = true;
 		} else if (arg === "--no-coverage") {
 			noCoverage = true;
+		} else if (arg === "--preflight") {
+			preflightOnly = true;
 		} else if (arg === "--coverage-command") {
 			coverageCommand = args[i + 1];
 			if (!coverageCommand) {
@@ -727,6 +1646,7 @@ export function parseCliArgs(args) {
 		useChanged,
 		noCoverage,
 		coverageCommand,
+		preflightOnly,
 		fragments,
 	};
 }
@@ -748,7 +1668,14 @@ export function main(
 		stderr.write(cli.message);
 		return 1;
 	}
-	const { failOver, useChanged, noCoverage, coverageCommand, fragments } = cli;
+	const {
+		failOver,
+		useChanged,
+		noCoverage,
+		coverageCommand,
+		preflightOnly,
+		fragments,
+	} = cli;
 
 	let pkg = null;
 	try {
@@ -756,6 +1683,15 @@ export function main(
 	} catch {
 		stderr.write("crap4ts: run from a project root containing package.json\n");
 		return 1;
+	}
+
+	const preflight = inspectDependencyPreflight(rootDir, pkg, {
+		coverageCommand,
+		noCoverage,
+	});
+	if (preflightOnly) {
+		stdout.write(formatDependencyPreflight(preflight));
+		return preflight.packageManager.problems.length > 0 ? 1 : 0;
 	}
 
 	let ts;
@@ -781,7 +1717,7 @@ export function main(
 
 	const coverageMap = noCoverage
 		? null
-		: runCoverage(rootDir, pkg, coverageCommand, stderr);
+		: runCoverage(rootDir, pkg, coverageCommand, stderr, preflight);
 
 	const functions = [];
 	for (const file of filtered) {
