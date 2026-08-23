@@ -893,8 +893,14 @@ function commandExecutableTokens(command) {
 				continue;
 			}
 			if (first === "yarn") {
-				const yarnExecutable = words[1] === "run" ? null : words[1];
-				if (yarnExecutable) tokens.push(yarnExecutable.split("/").at(-1));
+				const second = words[1];
+				if (["exec", "dlx"].includes(second)) {
+					const executable = firstExecutableAfter(words, 2);
+					if (executable) tokens.push(executable);
+				} else {
+					const yarnExecutable = second === "run" ? null : second;
+					if (yarnExecutable) tokens.push(yarnExecutable.split("/").at(-1));
+				}
 				continue;
 			}
 			if (COMMAND_WRAPPERS.has(first)) {
@@ -1101,6 +1107,13 @@ const STRYKER_CONFIG_FILES = [
 	"stryker.config.mjs",
 ];
 
+function isJavaScriptSyntaxValid(path) {
+	const result = spawnSync(process.execPath, ["--check", path], {
+		encoding: "utf8",
+	});
+	return !result.error && result.status === 0;
+}
+
 function detectStrykerConfig(rootDir) {
 	for (const file of STRYKER_CONFIG_FILES) {
 		const path = join(rootDir, file);
@@ -1117,6 +1130,9 @@ function detectStrykerConfig(rootDir) {
 			} catch {
 				return { present: true, valid: false, runner: null };
 			}
+		}
+		if (!isJavaScriptSyntaxValid(path)) {
+			return { present: true, valid: false, runner: null };
 		}
 		const match = text.match(/testRunner\s*:\s*["'](vitest|jest)["']/);
 		return { present: true, valid: true, runner: match?.[1] ?? null };
