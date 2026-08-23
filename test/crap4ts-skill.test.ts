@@ -480,10 +480,7 @@ test("dependency preflight reports missing coverage and mutation modules", async
 		};
 		const preflight = inspectDependencyPreflight(dir, pkg);
 		assert.deepEqual(preflight.packageManager.problems, []);
-		assert.deepEqual(preflight.coverage.missing, [
-			"@vitest/coverage-v8",
-			"@vitest/coverage-istanbul",
-		]);
+		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
 		assert.deepEqual(preflight.mutation.missing, [
 			"@stryker-mutator/core",
 			"stryker config",
@@ -631,7 +628,7 @@ test("dependency preflight expands delegated override coverage commands", async 
 			assert.equal(preflight.coverage.plan?.runner, "vitest", coverageCommand);
 			assert.deepEqual(
 				preflight.coverage.missing,
-				["@vitest/coverage-v8", "@vitest/coverage-istanbul"],
+				["@vitest/coverage-v8"],
 				coverageCommand,
 			);
 		}
@@ -676,7 +673,7 @@ test("dependency preflight detects package-manager direct vitest commands", asyn
 			assert.equal(preflight.coverage.plan?.runner, "vitest", coverageCommand);
 			assert.deepEqual(
 				preflight.coverage.missing,
-				["@vitest/coverage-v8", "@vitest/coverage-istanbul"],
+				["@vitest/coverage-v8"],
 				coverageCommand,
 			);
 		}
@@ -770,10 +767,7 @@ test("dependency preflight flags version-mismatched companions", async () => {
 			preflight.dependencies.get("@stryker-mutator/vitest-runner")?.status,
 			"version-mismatch",
 		);
-		assert.deepEqual(preflight.coverage.missing, [
-			"@vitest/coverage-v8",
-			"@vitest/coverage-istanbul",
-		]);
+		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
 		assert.deepEqual(preflight.mutation.missing, [
 			"@stryker-mutator/vitest-runner",
 		]);
@@ -999,10 +993,7 @@ test("dependency preflight validates Vitest coverage provider peer range", async
 			preflight.dependencies.get("@vitest/coverage-v8")?.status,
 			"version-mismatch",
 		);
-		assert.deepEqual(preflight.coverage.missing, [
-			"@vitest/coverage-v8",
-			"@vitest/coverage-istanbul",
-		]);
+		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -1042,6 +1033,38 @@ test("dependency preflight requires selected Vitest coverage provider", async ()
 	}
 });
 
+test("dependency preflight requires Vitest default v8 coverage provider", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-default-provider-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.9.0"],
+			["vitest", "4.1.9"],
+			["@vitest/coverage-istanbul", "4.1.9"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "5",
+				vitest: ">=4 <5",
+				"@vitest/coverage-istanbul": ">=4 <5",
+			},
+		});
+		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight validates wildcard ranges", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-wildcard-range-`);
 	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
@@ -1076,10 +1099,7 @@ test("dependency preflight validates wildcard ranges", async () => {
 			preflight.dependencies.get("@vitest/coverage-v8")?.status,
 			"version-mismatch",
 		);
-		assert.deepEqual(preflight.coverage.missing, [
-			"@vitest/coverage-v8",
-			"@vitest/coverage-istanbul",
-		]);
+		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -1118,10 +1138,7 @@ test("dependency preflight fails closed on unsupported semver comparators", asyn
 			preflight.dependencies.get("@vitest/coverage-v8")?.status,
 			"version-mismatch",
 		);
-		assert.deepEqual(preflight.coverage.missing, [
-			"@vitest/coverage-v8",
-			"@vitest/coverage-istanbul",
-		]);
+		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -1155,10 +1172,7 @@ test("dependency preflight follows command wrappers when inferring runner", asyn
 				devDependencies: { typescript: "^5", vitest: "^4" },
 			});
 			assert.equal(preflight.coverage.plan?.runner, "vitest");
-			assert.deepEqual(preflight.coverage.missing, [
-				"@vitest/coverage-v8",
-				"@vitest/coverage-istanbul",
-			]);
+			assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
 		}
 	} finally {
 		await rm(dir, { recursive: true, force: true });
@@ -1201,10 +1215,7 @@ test("dependency preflight expands package-manager run commands with options", a
 				{ coverageCommand },
 			);
 			assert.equal(preflight.coverage.plan?.runner, "vitest");
-			assert.deepEqual(preflight.coverage.missing, [
-				"@vitest/coverage-v8",
-				"@vitest/coverage-istanbul",
-			]);
+			assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
 		}
 	} finally {
 		await rm(dir, { recursive: true, force: true });
@@ -1363,6 +1374,44 @@ test("dependency preflight rejects malformed JavaScript Stryker config", async (
 			join(dir, ".stryker.config.js"),
 			"module.exports = { testRunner: 'vitest', } }\n",
 		);
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "^5",
+				vitest: "^4",
+				"@vitest/coverage-v8": "^4",
+				"@stryker-mutator/core": "^10",
+				"@stryker-mutator/vitest-runner": "^10",
+			},
+		});
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, ["stryker config"]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight rejects non-object JSON Stryker config", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-stryker-json-array-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+			["@vitest/coverage-v8", "4.0.0"],
+			["@stryker-mutator/core", "10.0.0"],
+			["@stryker-mutator/vitest-runner", "10.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		await write(join(dir, "stryker.conf.json"), "[]\n");
 		const preflight = inspectDependencyPreflight(dir, {
 			packageManager: "npm@10.0.0",
 			scripts: { "test:coverage": "vitest run --coverage" },

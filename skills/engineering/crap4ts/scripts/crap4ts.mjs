@@ -1189,10 +1189,9 @@ function missingVitestCoverageProviders(dependencies, plan) {
 			? []
 			: [selectedProvider];
 	}
-	const hasProvider = VITEST_COVERAGE_PROVIDERS.some(
-		(name) => dependencies.get(name)?.status === "ok",
-	);
-	return hasProvider ? [] : VITEST_COVERAGE_PROVIDERS;
+	return dependencies.get("@vitest/coverage-v8")?.status === "ok"
+		? []
+		: ["@vitest/coverage-v8"];
 }
 
 const STRYKER_CONFIG_FILES = [
@@ -1228,6 +1227,10 @@ function isStaticJavaScriptConfigUsable(text) {
 	);
 }
 
+function isPlainObject(value) {
+	return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
 function detectStrykerConfig(rootDir) {
 	for (const file of STRYKER_CONFIG_FILES) {
 		const path = join(rootDir, file);
@@ -1236,6 +1239,9 @@ function detectStrykerConfig(rootDir) {
 		if (file.endsWith(".json")) {
 			try {
 				const config = JSON.parse(text);
+				if (!isPlainObject(config)) {
+					return { present: true, valid: false, runner: null };
+				}
 				return {
 					present: true,
 					valid: true,
