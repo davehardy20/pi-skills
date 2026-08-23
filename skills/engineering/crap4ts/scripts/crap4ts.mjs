@@ -802,6 +802,28 @@ function dependencyState(rootDir, pkg, name, packageManagerName) {
 	};
 }
 
+function dependencyStateWithFallback(
+	rootDir,
+	pkg,
+	name,
+	packageManagerName,
+	fallbackRootDir,
+	fallbackPkg,
+) {
+	const primary = dependencyState(rootDir, pkg, name, packageManagerName);
+	if (!fallbackRootDir || !fallbackPkg || fallbackRootDir === rootDir) {
+		return primary;
+	}
+	if (primary.status === "ok" || primary.declared) return primary;
+	const fallback = dependencyState(
+		fallbackRootDir,
+		fallbackPkg,
+		name,
+		packageManagerName,
+	);
+	return fallback.declared || fallback.status === "ok" ? fallback : primary;
+}
+
 function markPairMismatch(dependencies, leftName, rightName) {
 	const left = dependencies.get(leftName);
 	const right = dependencies.get(rightName);
@@ -1042,6 +1064,49 @@ function workspacePatternBase(pattern) {
 	return base.replace(/[\\/]*$/, "") || ".";
 }
 
+function normalizeRelativePath(path) {
+	return path.replace(/\\\\/g, "/");
+}
+
+function escapeRegExpChar(char) {
+	return /[\\^$+?.()|{}[\]]/.test(char) ? `\\${char}` : char;
+}
+
+function workspacePatternRegExp(pattern) {
+	const normalized = normalizeRelativePath(pattern).replace(/^\.\//, "");
+	let source = "^";
+	for (let index = 0; index < normalized.length; index += 1) {
+		const char = normalized[index];
+		if (char === "*" && normalized[index + 1] === "*") {
+			source += ".*";
+			index += 1;
+		} else if (char === "*") {
+			source += "[^/]*";
+		} else {
+			source += escapeRegExpChar(char);
+		}
+	}
+	return new RegExp(`${source}$`);
+}
+
+function collectWorkspacePackageDirs(rootDir, baseDir, matcher, dirs) {
+	try {
+		for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
+			if (!entry.isDirectory() || EXCLUDED_DIRS.has(entry.name)) continue;
+			const dir = join(baseDir, entry.name);
+			if (!isInsideDirectory(rootDir, dir)) continue;
+			const rel = normalizeRelativePath(relative(rootDir, dir));
+			const packageDir = matcher.test(rel)
+				? packageDirIfValid(rootDir, dir)
+				: null;
+			if (packageDir) dirs.push(packageDir);
+			collectWorkspacePackageDirs(rootDir, dir, matcher, dirs);
+		}
+	} catch {
+		// Ignore missing or unreadable workspace pattern roots.
+	}
+}
+
 function workspacePackageDirs(rootDir) {
 	const dirs = [];
 	for (const pattern of workspacePatterns(rootDir)) {
@@ -1054,17 +1119,14 @@ function workspacePackageDirs(rootDir) {
 			if (dir) dirs.push(dir);
 			continue;
 		}
-		try {
-			for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
-				if (!entry.isDirectory()) continue;
-				const dir = packageDirIfValid(rootDir, join(baseDir, entry.name));
-				if (dir) dirs.push(dir);
-			}
-		} catch {
-			// Ignore missing or unreadable workspace pattern roots.
-		}
+		collectWorkspacePackageDirs(
+			rootDir,
+			baseDir,
+			workspacePatternRegExp(pattern),
+			dirs,
+		);
 	}
-	return dirs;
+	return [...new Set(dirs)];
 }
 
 function workspacePackageDirByName(rootDir, name) {
@@ -1242,7 +1304,7 @@ function delegatedScriptReferences(rootDir, command, currentDir) {
 	return refs;
 }
 
-function expandedScriptCommand(
+function scriptExpansionDetails(
 	rootDir,
 	pkg,
 	command,
@@ -1250,6 +1312,8 @@ function expandedScriptCommand(
 	currentDir = rootDir,
 ) {
 	const parts = [command];
+	let packageDir = inferRunner(command) ? currentDir : null;
+	let packageJson = packageDir ? pkg : null;
 	for (const ref of delegatedScriptReferences(rootDir, command, currentDir)) {
 		const key = `${ref.packageDir}:${ref.name}`;
 		if (seen.has(key)) continue;
@@ -1260,17 +1324,24 @@ function expandedScriptCommand(
 				: readPackageJson(join(ref.packageDir, "package.json"));
 		const script = scriptPkg?.scripts?.[ref.name];
 		if (typeof script !== "string") continue;
-		parts.push(
-			expandedScriptCommand(
-				rootDir,
-				scriptPkg ?? pkg,
-				script,
-				seen,
-				ref.packageDir,
-			),
+		const child = scriptExpansionDetails(
+			rootDir,
+			scriptPkg ?? pkg,
+			script,
+			seen,
+			ref.packageDir,
 		);
+		parts.push(child.expandedCommand);
+		if (!packageDir) {
+			packageDir = child.packageDir;
+			packageJson = child.pkg;
+		}
 	}
-	return parts.join("\n");
+	return {
+		expandedCommand: parts.join("\n"),
+		packageDir: packageDir ?? currentDir,
+		pkg: packageJson ?? pkg,
+	};
 }
 
 function packageManagerFromField(pkg) {
@@ -1352,39 +1423,41 @@ function coveragePlan(
 	const runCommand = (scriptName) =>
 		`${packageManagerName ?? detectPackageManager(rootDir, pkg).manager} run ${scriptName}`;
 	if (overrideCommand) {
-		const expandedCommand = expandedScriptCommand(
-			rootDir,
-			pkg,
-			overrideCommand,
-		);
+		const expansion = scriptExpansionDetails(rootDir, pkg, overrideCommand);
 		return {
 			command: overrideCommand,
-			expandedCommand,
+			expandedCommand: expansion.expandedCommand,
+			packageDir: expansion.packageDir,
+			packageJson: expansion.pkg,
 			source: "override",
 			script: null,
-			runner: inferRunner(expandedCommand),
+			runner: inferRunner(expansion.expandedCommand),
 		};
 	}
 	if (typeof scripts["test:coverage"] === "string") {
 		const script = scripts["test:coverage"];
-		const expandedCommand = expandedScriptCommand(rootDir, pkg, script);
+		const expansion = scriptExpansionDetails(rootDir, pkg, script);
 		return {
 			command: runCommand("test:coverage"),
-			expandedCommand,
+			expandedCommand: expansion.expandedCommand,
+			packageDir: expansion.packageDir,
+			packageJson: expansion.pkg,
 			source: "script:test:coverage",
 			script,
-			runner: inferRunner(expandedCommand),
+			runner: inferRunner(expansion.expandedCommand),
 		};
 	}
 	if (typeof scripts.coverage === "string") {
 		const script = scripts.coverage;
-		const expandedCommand = expandedScriptCommand(rootDir, pkg, script);
+		const expansion = scriptExpansionDetails(rootDir, pkg, script);
 		return {
 			command: runCommand("coverage"),
-			expandedCommand,
+			expandedCommand: expansion.expandedCommand,
+			packageDir: expansion.packageDir,
+			packageJson: expansion.pkg,
 			source: "script:coverage",
 			script,
-			runner: inferRunner(expandedCommand),
+			runner: inferRunner(expansion.expandedCommand),
 		};
 	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "vitest"))) {
@@ -1397,6 +1470,8 @@ function coveragePlan(
 			script: null,
 			runner: "vitest",
 			expandedCommand: "./node_modules/.bin/vitest run --coverage",
+			packageDir: rootDir,
+			packageJson: pkg,
 		};
 	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "jest"))) {
@@ -1409,6 +1484,8 @@ function coveragePlan(
 			script: null,
 			runner: "jest",
 			expandedCommand: "./node_modules/.bin/jest --coverage",
+			packageDir: rootDir,
+			packageJson: pkg,
 		};
 	}
 	return null;
@@ -1553,6 +1630,8 @@ export function inspectDependencyPreflight(
 	const plan = noCoverage
 		? null
 		: coveragePlan(rootDir, pkg, coverageCommand, packageManager.manager);
+	const dependencyRootDir = plan?.packageDir ?? rootDir;
+	const dependencyPackage = plan?.packageJson ?? pkg;
 	const dependencyNames = new Set([
 		"typescript",
 		"vitest",
@@ -1563,7 +1642,14 @@ export function inspectDependencyPreflight(
 	const dependencies = new Map(
 		[...dependencyNames].map((name) => [
 			name,
-			dependencyState(rootDir, pkg, name, packageManager.manager),
+			dependencyStateWithFallback(
+				dependencyRootDir,
+				dependencyPackage,
+				name,
+				packageManager.manager,
+				rootDir,
+				pkg,
+			),
 		]),
 	);
 	applyCompatibilityChecks(dependencies);

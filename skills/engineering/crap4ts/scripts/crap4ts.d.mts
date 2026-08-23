@@ -174,6 +174,8 @@ export interface DependencyPreflight {
 		plan: {
 			command: string;
 			expandedCommand: string;
+			packageDir: string;
+			packageJson: Record<string, unknown>;
 			source: string;
 			script: string | null;
 			runner: string | null;
