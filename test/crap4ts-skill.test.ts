@@ -1541,6 +1541,75 @@ test("package-manager preflight blocks coverage command execution", async () => 
 	}
 });
 
+test("coverage preflight blocks under-provisioned coverage command execution", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-coverage-enforce-`);
+	const {
+		chmod,
+		mkdir,
+		rm,
+		writeFile: write,
+	} = await import("node:fs/promises");
+	try {
+		await mkdir(join(dir, "src"), { recursive: true });
+		await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		const vitestBin = join(dir, "node_modules", ".bin", "vitest");
+		await write(vitestBin, "#!/bin/sh\nexit 0\n", "utf8");
+		await chmod(vitestBin, 0o755);
+		await write(
+			join(dir, "package.json"),
+			JSON.stringify({
+				name: "fixture",
+				private: true,
+				packageManager: "npm@10.0.0",
+				scripts: {
+					"test:coverage": "vitest run --coverage && node write-sentinel.cjs",
+				},
+				devDependencies: {
+					typescript: "^5",
+					vitest: "^4",
+				},
+			}),
+			"utf8",
+		);
+		await write(
+			join(dir, "src", "core.ts"),
+			"export function f(a: number) { return a ? 1 : 0; }\n",
+			"utf8",
+		);
+		await write(
+			join(dir, "write-sentinel.cjs"),
+			'const fs = require("node:fs"); fs.writeFileSync("sentinel.txt", "ran");\n',
+			"utf8",
+		);
+
+		const result = runMainInProcess(dir);
+
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stderr, /coverage preflight failed/);
+		let sentinelExists = true;
+		try {
+			await access(join(dir, "sentinel.txt"));
+		} catch {
+			sentinelExists = false;
+		}
+		assert.equal(sentinelExists, false);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("exported constants are populated Sets", () => {
 	assert.ok(SOURCE_EXTENSIONS instanceof Set);
 	assert.ok(EXCLUDED_DIRS instanceof Set);
