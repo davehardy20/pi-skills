@@ -486,6 +486,7 @@ test("dependency preflight reports missing coverage and mutation modules", async
 		]);
 		assert.deepEqual(preflight.mutation.missing, [
 			"@stryker-mutator/core",
+			"stryker config",
 			"@stryker-mutator/vitest-runner",
 		]);
 		const report = formatDependencyPreflight(preflight);
@@ -522,6 +523,10 @@ test("dependency preflight requires the Stryker runner matching coverage", async
 				"{}\n",
 			);
 		}
+		await write(
+			join(dir, "stryker.conf.json"),
+			JSON.stringify({ testRunner: "vitest" }),
+		);
 		const preflight = inspectDependencyPreflight(dir, {
 			packageManager: "npm@10.0.0",
 			scripts: { "test:coverage": "vitest run --coverage" },
@@ -561,6 +566,10 @@ test("dependency preflight follows delegated coverage scripts", async () => {
 				JSON.stringify({ version }),
 			);
 		}
+		await write(
+			join(dir, "stryker.conf.json"),
+			JSON.stringify({ testRunner: "vitest" }),
+		);
 		const preflight = inspectDependencyPreflight(dir, {
 			packageManager: "npm@10.0.0",
 			scripts: {
@@ -723,6 +732,10 @@ test("dependency preflight flags version-mismatched companions", async () => {
 				JSON.stringify({ version }),
 			);
 		}
+		await write(
+			join(dir, "stryker.conf.json"),
+			JSON.stringify({ testRunner: "vitest" }),
+		);
 		const preflight = inspectDependencyPreflight(dir, {
 			packageManager: "npm@10.0.0",
 			scripts: { "test:coverage": "vitest run --coverage" },
@@ -773,6 +786,10 @@ test("dependency preflight accepts installed versions satisfying declared ranges
 				JSON.stringify({ version }),
 			);
 		}
+		await write(
+			join(dir, "stryker.conf.json"),
+			JSON.stringify({ testRunner: "vitest" }),
+		);
 		const preflight = inspectDependencyPreflight(dir, {
 			packageManager: "npm@10.0.0",
 			scripts: { "test:coverage": "vitest run --coverage" },
@@ -816,6 +833,10 @@ test("dependency preflight handles npm caret and tilde boundaries", async () => 
 				JSON.stringify({ version }),
 			);
 		}
+		await write(
+			join(dir, "stryker.conf.json"),
+			JSON.stringify({ testRunner: "vitest" }),
+		);
 		const preflight = inspectDependencyPreflight(dir, {
 			packageManager: "npm@10.0.0",
 			scripts: { "test:coverage": "vitest run --coverage" },
@@ -863,6 +884,10 @@ test("dependency preflight handles hyphenated semver ranges", async () => {
 				),
 			);
 		}
+		await write(
+			join(dir, "stryker.conf.json"),
+			JSON.stringify({ testRunner: "vitest" }),
+		);
 		const preflight = inspectDependencyPreflight(dir, {
 			packageManager: "npm@10.0.0",
 			scripts: { "test:coverage": "vitest run --coverage" },
@@ -922,6 +947,125 @@ test("dependency preflight validates Vitest coverage provider peer range", async
 		assert.deepEqual(preflight.coverage.missing, [
 			"@vitest/coverage-v8",
 			"@vitest/coverage-istanbul",
+		]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight validates wildcard ranges", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-wildcard-range-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, pkg] of [
+			["typescript", { version: "5.9.0" }],
+			["vitest", { version: "5.0.0" }],
+			[
+				"@vitest/coverage-v8",
+				{ version: "4.1.0", peerDependencies: { vitest: "4.x" } },
+			],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify(pkg),
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "5.x",
+				vitest: "5.x",
+				"@vitest/coverage-v8": "4.x",
+			},
+		});
+		assert.equal(preflight.dependencies.get("vitest")?.status, "ok");
+		assert.equal(
+			preflight.dependencies.get("@vitest/coverage-v8")?.status,
+			"version-mismatch",
+		);
+		assert.deepEqual(preflight.coverage.missing, [
+			"@vitest/coverage-v8",
+			"@vitest/coverage-istanbul",
+		]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight follows command wrappers when inferring runner", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-wrapper-runner-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: {
+				"test:coverage": "cross-env NODE_ENV=test vitest run --coverage",
+			},
+			devDependencies: { typescript: "^5", vitest: "^4" },
+		});
+		assert.equal(preflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(preflight.coverage.missing, [
+			"@vitest/coverage-v8",
+			"@vitest/coverage-istanbul",
+		]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight reads Stryker config runner", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-stryker-config-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+			["@vitest/coverage-v8", "4.0.0"],
+			["@stryker-mutator/core", "10.0.0"],
+			["@stryker-mutator/vitest-runner", "10.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		await write(
+			join(dir, "stryker.conf.json"),
+			JSON.stringify({ testRunner: "jest" }),
+		);
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "vitest run --coverage" },
+			devDependencies: {
+				typescript: "^5",
+				vitest: "^4",
+				"@vitest/coverage-v8": "^4",
+				"@stryker-mutator/core": "^10",
+				"@stryker-mutator/vitest-runner": "^10",
+			},
+		});
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, [
+			"@stryker-mutator/jest-runner",
 		]);
 	} finally {
 		await rm(dir, { recursive: true, force: true });

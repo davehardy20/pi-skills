@@ -632,6 +632,27 @@ function hyphenRangeResult(version, alternative) {
 	return compareVersionTuples(version, upper.tuple) <= 0;
 }
 
+function wildcardRangeResult(version, comparator) {
+	const match = comparator.match(
+		/^v?(\d+|x|\*)(?:\.(\d+|x|\*))?(?:\.(\d+|x|\*))?$/i,
+	);
+	if (!match) return null;
+	const parts = [match[1], match[2], match[3]].filter((part) => part != null);
+	const wildcardIndex = parts.findIndex((part) => /^[x*]$/i.test(part));
+	if (wildcardIndex === -1) return null;
+	if (wildcardIndex === 0) return true;
+	const lower = [0, 0, 0];
+	for (let index = 0; index < wildcardIndex; index += 1) {
+		lower[index] = Number(parts[index]);
+	}
+	const upper = [...lower];
+	upper[wildcardIndex - 1] += 1;
+	for (let index = wildcardIndex; index < 3; index += 1) {
+		upper[index] = 0;
+	}
+	return versionInRange(version, lower, upper);
+}
+
 function satisfiesComparator(version, comparator) {
 	const match = comparator.match(/^(>=|>|<=|<|=)?\s*(v?\d+(?:\.\d+){0,2})$/);
 	if (!match) return null;
@@ -657,8 +678,8 @@ function satisfiesDeclaredRange(installedVersion, declaredVersion) {
 	const installed = parseVersionTuple(installedVersion);
 	if (!installed || typeof declaredVersion !== "string") return null;
 	const range = declaredVersion.trim();
-	if (!range || ["*", "latest"].includes(range) || /x/i.test(range)) {
-		return null;
+	if (!range || ["*", "latest"].includes(range)) {
+		return range === "*" ? true : null;
 	}
 	let sawAnyKnownComparator = false;
 	for (const alternative of range.split("||")) {
@@ -673,6 +694,16 @@ function satisfiesDeclaredRange(installedVersion, declaredVersion) {
 		let sawKnownComparator = false;
 		let satisfied = true;
 		for (const comparator of comparators) {
+			const wildcardResult = wildcardRangeResult(installed, comparator);
+			if (wildcardResult != null) {
+				sawKnownComparator = true;
+				sawAnyKnownComparator = true;
+				if (!wildcardResult) {
+					satisfied = false;
+					break;
+				}
+				continue;
+			}
 			if (/^\^\s*v?\d+(?:\.\d+){0,2}$/.test(comparator)) {
 				sawKnownComparator = true;
 				sawAnyKnownComparator = true;
@@ -782,11 +813,14 @@ function applyCompatibilityChecks(dependencies) {
 	}
 }
 
+const COMMAND_WRAPPERS = new Set(["cross-env", "env", "dotenv", "dotenv-cli"]);
+
 function firstExecutableAfter(words, startIndex) {
 	for (let index = startIndex; index < words.length; index += 1) {
 		const word = words[index];
 		if (word === "--") continue;
 		if (word.startsWith("-")) continue;
+		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
 		return word.split("/").at(-1);
 	}
 	return null;
@@ -828,6 +862,11 @@ function commandExecutableTokens(command) {
 			if (first === "yarn") {
 				const yarnExecutable = words[1] === "run" ? null : words[1];
 				if (yarnExecutable) tokens.push(yarnExecutable.split("/").at(-1));
+				continue;
+			}
+			if (COMMAND_WRAPPERS.has(first)) {
+				const executable = firstExecutableAfter(words, 1);
+				if (executable) tokens.push(executable);
 				continue;
 			}
 			tokens.push(first.split("/").at(-1));
@@ -1010,15 +1049,54 @@ function missingVitestCoverageProviders(dependencies) {
 	return hasProvider ? [] : VITEST_COVERAGE_PROVIDERS;
 }
 
-function missingMutationPackages(dependencies, runner) {
+const STRYKER_CONFIG_FILES = [
+	"stryker.conf.json",
+	"stryker.conf.js",
+	"stryker.conf.cjs",
+	"stryker.conf.mjs",
+	"stryker.config.json",
+	"stryker.config.js",
+	"stryker.config.cjs",
+	"stryker.config.mjs",
+];
+
+function detectStrykerConfig(rootDir) {
+	for (const file of STRYKER_CONFIG_FILES) {
+		const path = join(rootDir, file);
+		if (!existsSync(path)) continue;
+		const text = readFileSync(path, "utf8");
+		if (file.endsWith(".json")) {
+			try {
+				const config = JSON.parse(text);
+				return {
+					present: true,
+					valid: true,
+					runner: config.testRunner ?? null,
+				};
+			} catch {
+				return { present: true, valid: false, runner: null };
+			}
+		}
+		const match = text.match(/testRunner\s*:\s*["'](vitest|jest)["']/);
+		return { present: true, valid: true, runner: match?.[1] ?? null };
+	}
+	return { present: false, valid: false, runner: null };
+}
+
+function missingMutationPackages(rootDir, dependencies, runner) {
 	const missing = [];
 	if (dependencies.get("@stryker-mutator/core")?.status !== "ok") {
 		missing.push("@stryker-mutator/core");
 	}
+	const config = detectStrykerConfig(rootDir);
+	if (!config.present || !config.valid) missing.push("stryker config");
+	const mutationRunner = ["vitest", "jest"].includes(config.runner)
+		? config.runner
+		: runner;
 	const requiredRunners = [];
-	if (runner === "vitest") {
+	if (mutationRunner === "vitest") {
 		requiredRunners.push("@stryker-mutator/vitest-runner");
-	} else if (runner === "jest") {
+	} else if (mutationRunner === "jest") {
 		requiredRunners.push("@stryker-mutator/jest-runner");
 	} else {
 		const hasAnyRunner = [
@@ -1077,7 +1155,11 @@ export function inspectDependencyPreflight(
 			missing: missingCoverage,
 		},
 		mutation: {
-			missing: missingMutationPackages(dependencies, plan?.runner ?? null),
+			missing: missingMutationPackages(
+				rootDir,
+				dependencies,
+				plan?.runner ?? null,
+			),
 		},
 		dependencies,
 	};
