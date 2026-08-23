@@ -525,6 +525,11 @@ const VITEST_COVERAGE_PROVIDERS = [
 	"@vitest/coverage-istanbul",
 ];
 
+const VITEST_COVERAGE_PROVIDER_BY_NAME = new Map([
+	["v8", "@vitest/coverage-v8"],
+	["istanbul", "@vitest/coverage-istanbul"],
+]);
+
 const STRYKER_PACKAGES = [
 	"@stryker-mutator/core",
 	"@stryker-mutator/vitest-runner",
@@ -941,7 +946,7 @@ function delegatedScriptNames(command) {
 	if (!command) return [];
 	const names = [];
 	const patterns = [
-		/\b(?:npm|pnpm|bun)\s+run\s+([\w:.-]+)/g,
+		/\b(?:npm|pnpm|bun)\s+(?:run|run-script|rum|urn)\s+([\w:.-]+)/g,
 		/\b(?:npm|pnpm|bun)\s+(test|start|stop|restart)\b/g,
 		/\byarn\s+(?:run\s+)?([\w:.-]+)/g,
 	];
@@ -1045,29 +1050,35 @@ function coveragePlan(
 	const runCommand = (scriptName) =>
 		`${packageManagerName ?? detectPackageManager(rootDir, pkg).manager} run ${scriptName}`;
 	if (overrideCommand) {
+		const expandedCommand = expandedScriptCommand(pkg, overrideCommand);
 		return {
 			command: overrideCommand,
+			expandedCommand,
 			source: "override",
 			script: null,
-			runner: inferRunner(expandedScriptCommand(pkg, overrideCommand)),
+			runner: inferRunner(expandedCommand),
 		};
 	}
 	if (typeof scripts["test:coverage"] === "string") {
 		const script = scripts["test:coverage"];
+		const expandedCommand = expandedScriptCommand(pkg, script);
 		return {
 			command: runCommand("test:coverage"),
+			expandedCommand,
 			source: "script:test:coverage",
 			script,
-			runner: inferRunner(expandedScriptCommand(pkg, script)),
+			runner: inferRunner(expandedCommand),
 		};
 	}
 	if (typeof scripts.coverage === "string") {
 		const script = scripts.coverage;
+		const expandedCommand = expandedScriptCommand(pkg, script);
 		return {
 			command: runCommand("coverage"),
+			expandedCommand,
 			source: "script:coverage",
 			script,
-			runner: inferRunner(expandedScriptCommand(pkg, script)),
+			runner: inferRunner(expandedCommand),
 		};
 	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "vitest"))) {
@@ -1079,6 +1090,7 @@ function coveragePlan(
 			source: "local-bin:vitest",
 			script: null,
 			runner: "vitest",
+			expandedCommand: "./node_modules/.bin/vitest run --coverage",
 		};
 	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "jest"))) {
@@ -1090,12 +1102,27 @@ function coveragePlan(
 			source: "local-bin:jest",
 			script: null,
 			runner: "jest",
+			expandedCommand: "./node_modules/.bin/jest --coverage",
 		};
 	}
 	return null;
 }
 
-function missingVitestCoverageProviders(dependencies) {
+function selectedVitestCoverageProvider(plan) {
+	const command = plan?.expandedCommand ?? plan?.command ?? "";
+	const match = command.match(
+		/--coverage\.(?:provider|coverageProvider)(?:=|\s+)(v8|istanbul)\b/,
+	);
+	return match ? VITEST_COVERAGE_PROVIDER_BY_NAME.get(match[1]) : null;
+}
+
+function missingVitestCoverageProviders(dependencies, plan) {
+	const selectedProvider = selectedVitestCoverageProvider(plan);
+	if (selectedProvider) {
+		return dependencies.get(selectedProvider)?.status === "ok"
+			? []
+			: [selectedProvider];
+	}
 	const hasProvider = VITEST_COVERAGE_PROVIDERS.some(
 		(name) => dependencies.get(name)?.status === "ok",
 	);
@@ -1149,7 +1176,7 @@ function detectStrykerConfig(rootDir) {
 			return { present: true, valid: false, runner: null };
 		}
 		const match = text.match(
-			/(?:["']testRunner["']|testRunner)\s*:\s*["'](vitest|jest)["']/,
+			/(?:["']testRunner["']|testRunner)\s*:\s*["']([\w-]+)["']/,
 		);
 		return { present: true, valid: true, runner: match?.[1] ?? null };
 	}
@@ -1163,9 +1190,15 @@ function missingMutationPackages(rootDir, dependencies, runner) {
 	}
 	const config = detectStrykerConfig(rootDir);
 	if (!config.present || !config.valid) missing.push("stryker config");
-	const mutationRunner = ["vitest", "jest"].includes(config.runner)
-		? config.runner
-		: runner;
+	let mutationRunner = runner;
+	if (config.present && config.valid && typeof config.runner === "string") {
+		if (["vitest", "jest"].includes(config.runner)) {
+			mutationRunner = config.runner;
+		} else {
+			missing.push(`unsupported Stryker runner: ${config.runner}`);
+			mutationRunner = null;
+		}
+	}
 	const requiredRunners = [];
 	if (mutationRunner === "vitest") {
 		requiredRunners.push("@stryker-mutator/vitest-runner");
@@ -1217,7 +1250,7 @@ export function inspectDependencyPreflight(
 		if (dependencies.get("vitest")?.status !== "ok") {
 			missingCoverage.push("vitest");
 		}
-		missingCoverage.push(...missingVitestCoverageProviders(dependencies));
+		missingCoverage.push(...missingVitestCoverageProviders(dependencies, plan));
 	} else if (plan?.runner === "jest") {
 		if (dependencies.get("jest")?.status !== "ok") missingCoverage.push("jest");
 	}
