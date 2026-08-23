@@ -853,6 +853,16 @@ function buildDependencyMap(
 	return dependencies;
 }
 
+function mergeDependencyMap(target, source) {
+	for (const [name, state] of source) {
+		const current = target.get(name);
+		if (!current || (current.status === "ok" && state.status !== "ok")) {
+			target.set(name, state);
+		}
+	}
+	return target;
+}
+
 function markPairMismatch(dependencies, leftName, rightName) {
 	const left = dependencies.get(leftName);
 	const right = dependencies.get(rightName);
@@ -939,7 +949,10 @@ function firstExecutableAfter(words, startIndex) {
 	for (let index = startIndex; index < words.length; index += 1) {
 		const word = words[index];
 		if (word === "--") return words[index + 1]?.split("/").at(-1) ?? null;
-		if (word.startsWith("-")) continue;
+		if (word.startsWith("-")) {
+			if (runOptionConsumesNext(word)) index += 1;
+			continue;
+		}
 		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
 		return word.split("/").at(-1);
 	}
@@ -955,16 +968,17 @@ function commandExecutableTokens(command) {
 			const first = words[0];
 			if (!first) continue;
 			if (["npm", "pnpm", "bun"].includes(first)) {
-				const second = words[1];
+				const commandIndex = skipRunOptions(words, 1);
+				const command = words[commandIndex];
 				if (
-					(first === "npm" && ["exec", "x"].includes(second)) ||
+					(first === "npm" && ["exec", "x"].includes(command)) ||
 					(["pnpm", "bun"].includes(first) &&
-						["exec", "x", "dlx"].includes(second))
+						["exec", "x", "dlx"].includes(command))
 				) {
-					const executable = firstExecutableAfter(words, 2);
+					const executable = firstExecutableAfter(words, commandIndex + 1);
 					if (executable) tokens.push(executable);
-				} else if (["pnpm", "bun"].includes(first) && second !== "run") {
-					const executable = firstExecutableAfter(words, 1);
+				} else if (["pnpm", "bun"].includes(first) && command !== "run") {
+					const executable = firstExecutableAfter(words, commandIndex);
 					if (
 						executable &&
 						!["test", "start", "stop", "restart"].includes(executable)
@@ -1700,6 +1714,7 @@ export function inspectDependencyPreflight(
 	const coverageContexts = plan?.packageContexts?.length
 		? plan.packageContexts
 		: [{ packageDir: dependencyRootDir, packageJson: dependencyPackage }];
+	const coverageDependenciesByContext = [];
 	if (plan?.runner === "vitest") {
 		for (const context of coverageContexts) {
 			const fallbackAllowed = !packageDeclaresAnyDependency(
@@ -1714,6 +1729,7 @@ export function inspectDependencyPreflight(
 				fallbackAllowed ? rootDir : null,
 				fallbackAllowed ? pkg : null,
 			);
+			coverageDependenciesByContext.push(coverageDependencies);
 			if (coverageDependencies.get("vitest")?.status !== "ok") {
 				missingCoverage.add("vitest");
 			}
@@ -1738,16 +1754,24 @@ export function inspectDependencyPreflight(
 				fallbackAllowed ? rootDir : null,
 				fallbackAllowed ? pkg : null,
 			);
+			coverageDependenciesByContext.push(coverageDependencies);
 			if (coverageDependencies.get("jest")?.status !== "ok") {
 				missingCoverage.add("jest");
 			}
 		}
 	}
+	const coverageDependencies = coverageDependenciesByContext.reduce(
+		(merged, contextDependencies) =>
+			mergeDependencyMap(merged, contextDependencies),
+		new Map(),
+	);
 	return {
 		packageManager,
 		coverage: {
 			plan,
 			missing: [...missingCoverage],
+			dependencies:
+				coverageDependencies.size > 0 ? coverageDependencies : dependencies,
 		},
 		mutation: {
 			missing: missingMutationPackages(
@@ -1755,6 +1779,7 @@ export function inspectDependencyPreflight(
 				mutationDependencies,
 				plan?.runner ?? null,
 			),
+			dependencies: mutationDependencies,
 		},
 		dependencies,
 	};
@@ -1782,7 +1807,9 @@ export function formatDependencyPreflight(preflight) {
 		"jest",
 		...VITEST_COVERAGE_PROVIDERS,
 	]) {
-		const dep = preflight.dependencies.get(name);
+		const dep = (preflight.coverage.dependencies ?? preflight.dependencies).get(
+			name,
+		);
 		if (dep) lines.push(`  - ${name}: ${dep.status}`);
 	}
 	if (preflight.coverage.missing.length > 0) {
@@ -1792,7 +1819,9 @@ export function formatDependencyPreflight(preflight) {
 	}
 	lines.push("mutation:");
 	for (const name of STRYKER_PACKAGES) {
-		const dep = preflight.dependencies.get(name);
+		const dep = (preflight.mutation.dependencies ?? preflight.dependencies).get(
+			name,
+		);
 		if (dep) lines.push(`  - ${name}: ${dep.status}`);
 	}
 	if (preflight.mutation.missing.length > 0) {

@@ -830,6 +830,8 @@ test("dependency preflight validates every delegated workspace context", async (
 
 		assert.equal(preflight.coverage.plan?.runner, "vitest");
 		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
+		const report = formatDependencyPreflight(preflight);
+		assert.ok(report.includes("  - @vitest/coverage-v8: missing"));
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -894,6 +896,9 @@ test("dependency preflight validates mutation dependencies from root", async () 
 			"@stryker-mutator/core",
 			"@stryker-mutator/vitest-runner",
 		]);
+		const report = formatDependencyPreflight(preflight);
+		assert.ok(report.includes("  - @stryker-mutator/core: missing"));
+		assert.ok(report.includes("  - @stryker-mutator/vitest-runner: missing"));
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -964,6 +969,10 @@ test("dependency preflight detects package-manager direct vitest commands", asyn
 			"bun vitest --coverage",
 			"npm exec vitest -- --coverage",
 			"npx vitest run --coverage",
+			"npm --workspace packages/a exec vitest -- --coverage",
+			"npm exec --workspace packages/a vitest -- --coverage",
+			"pnpm --filter packages/a exec vitest run --coverage",
+			"pnpm exec --filter packages/a vitest run --coverage",
 			"yarn exec vitest run --coverage",
 			"yarn dlx vitest run --coverage",
 		]) {

@@ -185,8 +185,9 @@ export interface DependencyPreflight {
 			runner: string | null;
 		} | null;
 		missing: string[];
+		dependencies: Map<string, DependencyState>;
 	};
-	mutation: { missing: string[] };
+	mutation: { missing: string[]; dependencies: Map<string, DependencyState> };
 	dependencies: Map<string, DependencyState>;
 }
 
