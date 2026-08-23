@@ -173,13 +173,22 @@ export interface DependencyPreflight {
 	coverage: {
 		plan: {
 			command: string;
+			expandedCommand: string;
+			packageDir: string;
+			packageJson: Record<string, unknown>;
+			packageContexts: Array<{
+				packageDir: string;
+				packageJson: Record<string, unknown>;
+				command?: string;
+			}>;
 			source: string;
 			script: string | null;
 			runner: string | null;
 		} | null;
 		missing: string[];
+		dependencies: Map<string, DependencyState>;
 	};
-	mutation: { missing: string[] };
+	mutation: { missing: string[]; dependencies: Map<string, DependencyState> };
 	dependencies: Map<string, DependencyState>;
 }
 

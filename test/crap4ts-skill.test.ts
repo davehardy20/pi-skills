@@ -489,7 +489,6 @@ test("dependency preflight reports missing coverage and mutation modules", async
 		const report = formatDependencyPreflight(preflight);
 		for (const missing of [
 			"@vitest/coverage-v8: missing",
-			"@vitest/coverage-istanbul: missing",
 			"@stryker-mutator/core: missing",
 			"@stryker-mutator/vitest-runner: missing",
 			"@stryker-mutator/jest-runner: missing",
@@ -594,6 +593,428 @@ test("dependency preflight follows delegated coverage scripts", async () => {
 	}
 });
 
+test("dependency preflight follows workspace delegated coverage scripts", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-workspace-delegated-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		for (const [name, version] of [
+			["typescript", "5.0.0"],
+			["vitest", "4.0.0"],
+		] as const) {
+			await mkdir(join(dir, "node_modules", ...name.split("/")), {
+				recursive: true,
+			});
+			await write(
+				join(dir, "node_modules", ...name.split("/"), "package.json"),
+				JSON.stringify({ version }),
+			);
+		}
+		await mkdir(join(dir, "packages", "a"), { recursive: true });
+		await write(
+			join(dir, "package.json"),
+			JSON.stringify({ workspaces: ["packages/*"] }),
+		);
+		await write(
+			join(dir, "packages", "a", "package.json"),
+			JSON.stringify({
+				name: "@scope/a",
+				scripts: {
+					coverage: "vitest run --coverage",
+					test: "vitest run --coverage",
+				},
+			}),
+		);
+
+		for (const command of [
+			"npm --workspace packages/a run coverage",
+			"npm --workspace @scope/a run coverage",
+			"npm run coverage --workspace packages/a",
+			"npm run coverage --workspace=@scope/a",
+			"npm test --workspace=@scope/a",
+			"pnpm --filter @scope/a run coverage",
+			"pnpm --filter @scope/a... run coverage",
+			"pnpm -F @scope/a run coverage",
+			"yarn workspace @scope/a run coverage",
+		]) {
+			const preflight = inspectDependencyPreflight(dir, {
+				packageManager: "npm@10.0.0",
+				scripts: { "test:coverage": command },
+				devDependencies: { typescript: "^5", vitest: "^4" },
+			});
+
+			assert.equal(preflight.coverage.plan?.runner, "vitest", command);
+			assert.deepEqual(
+				preflight.coverage.missing,
+				["@vitest/coverage-v8"],
+				command,
+			);
+		}
+
+		await write(join(dir, "package.json"), "{}\n");
+		await write(
+			join(dir, "pnpm-workspace.yaml"),
+			"packages:\n  - packages/*\n",
+		);
+		const pnpmPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "pnpm@10.0.0",
+			scripts: { "test:coverage": "pnpm --filter @scope/a run coverage" },
+			devDependencies: { typescript: "^5", vitest: "^4" },
+		});
+
+		assert.equal(pnpmPreflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(pnpmPreflight.coverage.missing, ["@vitest/coverage-v8"]);
+
+		const negatedPnpmPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "pnpm@10.0.0",
+			scripts: { "test:coverage": "pnpm --filter !@scope/a run coverage" },
+			devDependencies: { typescript: "^5", vitest: "^4" },
+		});
+
+		assert.equal(negatedPnpmPreflight.coverage.plan?.runner, null);
+		assert.deepEqual(negatedPnpmPreflight.coverage.missing, []);
+
+		await write(join(dir, "pnpm-workspace.yaml"), 'packages: ["packages/*"]\n');
+		const flowPnpmPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "pnpm@10.0.0",
+			scripts: { "test:coverage": "pnpm --filter @scope/a run coverage" },
+			devDependencies: { typescript: "^5", vitest: "^4" },
+		});
+
+		assert.equal(flowPnpmPreflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(flowPnpmPreflight.coverage.missing, [
+			"@vitest/coverage-v8",
+		]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight follows nested workspace glob packages", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-nested-workspace-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		await mkdir(join(dir, "node_modules", "vitest"), { recursive: true });
+		await write(
+			join(dir, "node_modules", "vitest", "package.json"),
+			JSON.stringify({ version: "4.0.0" }),
+		);
+		await mkdir(join(dir, "packages", "team", "a"), { recursive: true });
+		await write(
+			join(dir, "package.json"),
+			JSON.stringify({ workspaces: ["packages\\*\\*"] }),
+		);
+		await write(
+			join(dir, "packages", "team", "a", "package.json"),
+			JSON.stringify({
+				name: "@scope/a",
+				scripts: { coverage: "vitest run --coverage" },
+			}),
+		);
+
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "pnpm@10.0.0",
+			scripts: { "test:coverage": "pnpm --filter @scope/a run coverage" },
+			devDependencies: { vitest: "^4" },
+		});
+
+		assert.equal(preflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight stops self-delegating scripts with forwarded args", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-self-delegating-`);
+	const { rm } = await import("node:fs/promises");
+	try {
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: {
+				"test:coverage":
+					"npm run test:coverage -- --coverage.provider=istanbul",
+			},
+		});
+
+		assert.equal(preflight.coverage.plan?.runner, null);
+		assert.deepEqual(preflight.coverage.missing, []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight validates delegated workspace dependencies locally", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-workspace-local-deps-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	try {
+		await mkdir(join(dir, "packages", "a"), { recursive: true });
+		await write(
+			join(dir, "package.json"),
+			JSON.stringify({ workspaces: ["packages/*"] }),
+		);
+		await write(
+			join(dir, "packages", "a", "package.json"),
+			JSON.stringify({
+				name: "@scope/a",
+				scripts: { coverage: "vitest run --coverage" },
+				devDependencies: {
+					typescript: "^5",
+					vitest: "^4",
+					"@vitest/coverage-v8": "^4",
+				},
+			}),
+		);
+		for (const [name, pkg] of [
+			["typescript", { version: "5.0.0" }],
+			["vitest", { version: "4.0.0" }],
+			[
+				"@vitest/coverage-v8",
+				{ version: "4.0.0", peerDependencies: { vitest: "^4" } },
+			],
+		] as const) {
+			await mkdir(
+				join(dir, "packages", "a", "node_modules", ...name.split("/")),
+				{
+					recursive: true,
+				},
+			);
+			await write(
+				join(
+					dir,
+					"packages",
+					"a",
+					"node_modules",
+					...name.split("/"),
+					"package.json",
+				),
+				JSON.stringify(pkg),
+			);
+		}
+
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: { "test:coverage": "npm --workspace @scope/a run coverage" },
+		});
+
+		assert.equal(preflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.equal(preflight.dependencies.get("vitest")?.status, "ok");
+		assert.equal(
+			preflight.dependencies.get("@vitest/coverage-v8")?.status,
+			"ok",
+		);
+		const directPreflight = inspectDependencyPreflight(
+			dir,
+			{ packageManager: "npm@10.0.0" },
+			{
+				coverageCommand: "npm --workspace @scope/a exec vitest -- --coverage",
+			},
+		);
+		assert.equal(directPreflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(directPreflight.coverage.missing, []);
+		const yarnWorkspacePreflight = inspectDependencyPreflight(
+			dir,
+			{ packageManager: "yarn@4.0.0" },
+			{
+				coverageCommand: "yarn workspace @scope/a exec vitest --coverage",
+			},
+		);
+		assert.equal(yarnWorkspacePreflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(yarnWorkspacePreflight.coverage.missing, []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight validates every delegated workspace context", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-multi-workspace-deps-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	const writePackage = async (
+		packageDir: string,
+		name: string,
+		pkg: object,
+	) => {
+		const dependencyDir = join(packageDir, "node_modules", ...name.split("/"));
+		await mkdir(dependencyDir, { recursive: true });
+		await write(join(dependencyDir, "package.json"), JSON.stringify(pkg));
+	};
+	try {
+		await mkdir(join(dir, "packages", "a"), { recursive: true });
+		await mkdir(join(dir, "packages", "b"), { recursive: true });
+		await write(
+			join(dir, "package.json"),
+			JSON.stringify({
+				workspaces: ["packages/*"],
+				scripts: {
+					"test:coverage":
+						"npm --workspace @scope/a run coverage && npm --workspace @scope/b run coverage",
+				},
+			}),
+		);
+		await write(
+			join(dir, "packages", "a", "package.json"),
+			JSON.stringify({
+				name: "@scope/a",
+				scripts: { coverage: "vitest run --coverage" },
+				devDependencies: { vitest: "^4", "@vitest/coverage-v8": "^4" },
+			}),
+		);
+		await write(
+			join(dir, "packages", "b", "package.json"),
+			JSON.stringify({
+				name: "@scope/b",
+				scripts: { coverage: "vitest run --coverage" },
+				devDependencies: { vitest: "^4" },
+			}),
+		);
+		await writePackage(join(dir, "packages", "a"), "vitest", {
+			version: "4.0.0",
+		});
+		await writePackage(join(dir, "packages", "a"), "@vitest/coverage-v8", {
+			version: "4.0.0",
+			peerDependencies: { vitest: "^4" },
+		});
+		await writePackage(join(dir, "packages", "b"), "vitest", {
+			version: "4.0.0",
+		});
+
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: {
+				"test:coverage":
+					"npm --workspace @scope/a run coverage && npm --workspace @scope/b run coverage",
+			},
+		});
+
+		assert.equal(preflight.coverage.plan?.runner, "vitest");
+		assert.deepEqual(preflight.coverage.missing, ["@vitest/coverage-v8"]);
+		const report = formatDependencyPreflight(preflight);
+		assert.ok(report.includes("  - @vitest/coverage-v8: missing"));
+
+		await write(
+			join(dir, "packages", "b", "package.json"),
+			JSON.stringify({
+				name: "@scope/b",
+				scripts: { coverage: "vitest run --coverage" },
+				devDependencies: {
+					vitest: "^4",
+					"@vitest/coverage-istanbul": "^4",
+				},
+			}),
+		);
+		await writePackage(
+			join(dir, "packages", "b"),
+			"@vitest/coverage-istanbul",
+			{
+				version: "4.0.0",
+				peerDependencies: { vitest: "^4" },
+			},
+		);
+		const mixedProviderPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: {
+				"test:coverage":
+					"npm --workspace @scope/a run coverage && npm --workspace @scope/b run coverage -- --coverage.provider=istanbul",
+			},
+		});
+		assert.deepEqual(mixedProviderPreflight.coverage.missing, []);
+
+		await write(
+			join(dir, "packages", "a", "package.json"),
+			JSON.stringify({
+				name: "@scope/a",
+				scripts: { coverage: "jest --coverage" },
+				devDependencies: { jest: "^30" },
+			}),
+		);
+		await writePackage(join(dir, "packages", "a"), "jest", {
+			version: "30.0.0",
+		});
+		const mixedRunnerPreflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+			scripts: {
+				"test:coverage":
+					"npm --workspace @scope/a run coverage && npm --workspace @scope/b run coverage -- --coverage.provider=istanbul",
+			},
+		});
+		assert.deepEqual(mixedRunnerPreflight.coverage.missing, []);
+		const mixedRunnerReport = formatDependencyPreflight(mixedRunnerPreflight);
+		assert.ok(mixedRunnerReport.includes("  - jest: ok"));
+		assert.ok(mixedRunnerReport.includes("  - vitest: ok"));
+		assert.ok(mixedRunnerReport.includes("  - @vitest/coverage-istanbul: ok"));
+		assert.ok(!mixedRunnerReport.includes("  - @vitest/coverage-v8: missing"));
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("dependency preflight validates mutation dependencies from root", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/crap4ts-root-mutation-deps-`);
+	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
+	const writePackage = async (
+		packageDir: string,
+		name: string,
+		pkg: object,
+	) => {
+		const dependencyDir = join(packageDir, "node_modules", ...name.split("/"));
+		await mkdir(dependencyDir, { recursive: true });
+		await write(join(dependencyDir, "package.json"), JSON.stringify(pkg));
+	};
+	try {
+		await mkdir(join(dir, "packages", "a"), { recursive: true });
+		await write(
+			join(dir, "package.json"),
+			JSON.stringify({
+				workspaces: ["packages/*"],
+				scripts: { "test:coverage": "npm --workspace @scope/a run coverage" },
+			}),
+		);
+		await write(
+			join(dir, "stryker.conf.json"),
+			JSON.stringify({ testRunner: "vitest" }),
+		);
+		await write(
+			join(dir, "packages", "a", "package.json"),
+			JSON.stringify({
+				name: "@scope/a",
+				scripts: { coverage: "vitest run --coverage" },
+				devDependencies: {
+					vitest: "^4",
+					"@vitest/coverage-v8": "^4",
+					"@stryker-mutator/core": "^10",
+					"@stryker-mutator/vitest-runner": "^10",
+				},
+			}),
+		);
+		for (const [name, pkg] of [
+			["vitest", { version: "4.0.0" }],
+			[
+				"@vitest/coverage-v8",
+				{ version: "4.0.0", peerDependencies: { vitest: "^4" } },
+			],
+			["@stryker-mutator/core", { version: "10.0.0" }],
+			["@stryker-mutator/vitest-runner", { version: "10.0.0" }],
+		] as const) {
+			await writePackage(join(dir, "packages", "a"), name, pkg);
+		}
+
+		const preflight = inspectDependencyPreflight(dir, {
+			packageManager: "npm@10.0.0",
+		});
+
+		assert.deepEqual(preflight.coverage.missing, []);
+		assert.deepEqual(preflight.mutation.missing, [
+			"@stryker-mutator/core",
+			"@stryker-mutator/vitest-runner",
+		]);
+		const report = formatDependencyPreflight(preflight);
+		assert.ok(report.includes("  - @stryker-mutator/core: missing"));
+		assert.ok(report.includes("  - @stryker-mutator/vitest-runner: missing"));
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("dependency preflight expands delegated override coverage commands", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/crap4ts-override-preflight-`);
 	const { mkdir, rm, writeFile: write } = await import("node:fs/promises");
@@ -659,6 +1080,10 @@ test("dependency preflight detects package-manager direct vitest commands", asyn
 			"bun vitest --coverage",
 			"npm exec vitest -- --coverage",
 			"npx vitest run --coverage",
+			"npm --workspace packages/a exec vitest -- --coverage",
+			"npm exec --workspace packages/a vitest -- --coverage",
+			"pnpm --filter packages/a exec vitest run --coverage",
+			"pnpm exec --filter packages/a vitest run --coverage",
 			"yarn exec vitest run --coverage",
 			"yarn dlx vitest run --coverage",
 		]) {
@@ -1880,7 +2305,6 @@ test("main --preflight prints dependency readiness without requiring TypeScript"
 		assert.match(result.stdout, /^Dependency Preflight$/m);
 		for (const missing of [
 			"@vitest/coverage-v8: missing",
-			"@vitest/coverage-istanbul: missing",
 			"@stryker-mutator/core: missing",
 			"@stryker-mutator/vitest-runner: missing",
 			"@stryker-mutator/jest-runner: missing",

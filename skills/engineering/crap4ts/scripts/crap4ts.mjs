@@ -12,9 +12,22 @@
 // project's coverage command, analyze source files, print worst-first report.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+} from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import {
+	dirname,
+	extname,
+	isAbsolute,
+	join,
+	relative,
+	resolve,
+} from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -789,6 +802,67 @@ function dependencyState(rootDir, pkg, name, packageManagerName) {
 	};
 }
 
+function dependencyStateWithFallback(
+	rootDir,
+	pkg,
+	name,
+	packageManagerName,
+	fallbackRootDir,
+	fallbackPkg,
+) {
+	const primary = dependencyState(rootDir, pkg, name, packageManagerName);
+	if (!fallbackRootDir || !fallbackPkg || fallbackRootDir === rootDir) {
+		return primary;
+	}
+	if (primary.status === "ok" || primary.declared) return primary;
+	const fallback = dependencyState(
+		fallbackRootDir,
+		fallbackPkg,
+		name,
+		packageManagerName,
+	);
+	return fallback.declared || fallback.status === "ok" ? fallback : primary;
+}
+
+function packageDeclaresAnyDependency(pkg, names) {
+	return names.some((name) => declaredDependencyVersion(pkg, name) != null);
+}
+
+function buildDependencyMap(
+	rootDir,
+	pkg,
+	names,
+	packageManagerName,
+	fallbackRootDir = null,
+	fallbackPkg = null,
+) {
+	const dependencies = new Map(
+		[...names].map((name) => [
+			name,
+			dependencyStateWithFallback(
+				rootDir,
+				pkg,
+				name,
+				packageManagerName,
+				fallbackRootDir,
+				fallbackPkg,
+			),
+		]),
+	);
+	applyCompatibilityChecks(dependencies);
+	return dependencies;
+}
+
+function mergeDependencyMap(target, source) {
+	for (const [name, state] of source) {
+		const current = target.get(name);
+		if (!current || (current.status === "ok" && state.status !== "ok")) {
+			target.set(name, state);
+		}
+	}
+	return target;
+}
+
 function markPairMismatch(dependencies, leftName, rightName) {
 	const left = dependencies.get(leftName);
 	const right = dependencies.get(rightName);
@@ -875,7 +949,10 @@ function firstExecutableAfter(words, startIndex) {
 	for (let index = startIndex; index < words.length; index += 1) {
 		const word = words[index];
 		if (word === "--") return words[index + 1]?.split("/").at(-1) ?? null;
-		if (word.startsWith("-")) continue;
+		if (word.startsWith("-")) {
+			if (runOptionConsumesNext(word)) index += 1;
+			continue;
+		}
 		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
 		return word.split("/").at(-1);
 	}
@@ -891,16 +968,17 @@ function commandExecutableTokens(command) {
 			const first = words[0];
 			if (!first) continue;
 			if (["npm", "pnpm", "bun"].includes(first)) {
-				const second = words[1];
+				const commandIndex = skipRunOptions(words, 1);
+				const command = words[commandIndex];
 				if (
-					(first === "npm" && ["exec", "x"].includes(second)) ||
+					(first === "npm" && ["exec", "x"].includes(command)) ||
 					(["pnpm", "bun"].includes(first) &&
-						["exec", "x", "dlx"].includes(second))
+						["exec", "x", "dlx"].includes(command))
 				) {
-					const executable = firstExecutableAfter(words, 2);
+					const executable = firstExecutableAfter(words, commandIndex + 1);
 					if (executable) tokens.push(executable);
-				} else if (["pnpm", "bun"].includes(first) && second !== "run") {
-					const executable = firstExecutableAfter(words, 1);
+				} else if (["pnpm", "bun"].includes(first) && command !== "run") {
+					const executable = firstExecutableAfter(words, commandIndex);
 					if (
 						executable &&
 						!["test", "start", "stop", "restart"].includes(executable)
@@ -916,12 +994,17 @@ function commandExecutableTokens(command) {
 				continue;
 			}
 			if (first === "yarn") {
-				const second = words[1];
-				if (["exec", "dlx"].includes(second)) {
-					const executable = firstExecutableAfter(words, 2);
+				let commandIndex = skipRunOptions(words, 1);
+				let command = words[commandIndex];
+				if (command === "workspace") {
+					commandIndex = skipRunOptions(words, commandIndex + 2);
+					command = words[commandIndex];
+				}
+				if (["exec", "dlx"].includes(command)) {
+					const executable = firstExecutableAfter(words, commandIndex + 1);
 					if (executable) tokens.push(executable);
 				} else {
-					const yarnExecutable = second === "run" ? null : second;
+					const yarnExecutable = command === "run" ? null : command;
 					if (yarnExecutable) tokens.push(yarnExecutable.split("/").at(-1));
 				}
 				continue;
@@ -962,9 +1045,212 @@ const RUN_OPTIONS_WITH_OPERANDS = new Set([
 	"-w",
 ]);
 
+function runOptionName(word) {
+	return word.startsWith("--") ? word.split("=")[0] : word;
+}
+
 function runOptionConsumesNext(word) {
 	if (word.startsWith("--") && word.includes("=")) return false;
-	return RUN_OPTIONS_WITH_OPERANDS.has(word);
+	return RUN_OPTIONS_WITH_OPERANDS.has(runOptionName(word));
+}
+
+function optionValue(words, index) {
+	const word = words[index];
+	if (word.startsWith("--") && word.includes("=")) {
+		return word.slice(word.indexOf("=") + 1);
+	}
+	return words[index + 1] ?? null;
+}
+
+function isInsideDirectory(rootDir, candidateDir) {
+	try {
+		const rootReal = realpathSync(rootDir);
+		const candidateReal = realpathSync(candidateDir);
+		const rel = relative(rootReal, candidateReal);
+		return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+	} catch {
+		return false;
+	}
+}
+
+function packageDirIfValid(rootDir, candidateDir) {
+	return isInsideDirectory(rootDir, candidateDir) &&
+		existsSync(join(candidateDir, "package.json"))
+		? candidateDir
+		: null;
+}
+
+function pnpmWorkspacePatterns(rootDir) {
+	try {
+		const yaml = readFileSync(join(rootDir, "pnpm-workspace.yaml"), "utf8");
+		const flowMatch = yaml.match(/^packages:\s*\[([^\]]*)\]/m);
+		if (flowMatch) {
+			return flowMatch[1]
+				.split(",")
+				.map((entry) => entry.trim().replace(/^['"]|['"]$/g, ""))
+				.filter(Boolean);
+		}
+		const match = yaml.match(/^packages:\s*\n((?:\s*-\s*[^\n]+\n?)*)/m);
+		if (!match) return [];
+		return match[1]
+			.split(/\n+/)
+			.map((line) => line.match(/^\s*-\s*["']?([^"'#]+)["']?/u)?.[1]?.trim())
+			.filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
+function workspacePatterns(rootDir) {
+	const pkg = readPackageJson(join(rootDir, "package.json"));
+	const workspaces = pkg?.workspaces;
+	const packagePatterns = Array.isArray(workspaces)
+		? workspaces
+		: Array.isArray(workspaces?.packages)
+			? workspaces.packages
+			: [];
+	return [...new Set([...packagePatterns, ...pnpmWorkspacePatterns(rootDir)])];
+}
+
+function workspacePatternBase(pattern) {
+	if (typeof pattern !== "string") return null;
+	const firstGlob = pattern.search(/[*{[]/);
+	const base = firstGlob === -1 ? pattern : pattern.slice(0, firstGlob);
+	return base.replace(/[\\/]*$/, "") || ".";
+}
+
+function normalizeRelativePath(path) {
+	return path.replace(/\\/g, "/");
+}
+
+function escapeRegExpChar(char) {
+	return /[\\^$+?.()|{}[\]]/.test(char) ? `\\${char}` : char;
+}
+
+function workspacePatternRegExp(pattern) {
+	const normalized = normalizeRelativePath(pattern).replace(/^\.\//, "");
+	let source = "^";
+	for (let index = 0; index < normalized.length; index += 1) {
+		const char = normalized[index];
+		if (char === "*" && normalized[index + 1] === "*") {
+			source += ".*";
+			index += 1;
+		} else if (char === "*") {
+			source += "[^/]*";
+		} else {
+			source += escapeRegExpChar(char);
+		}
+	}
+	return new RegExp(`${source}$`);
+}
+
+function collectWorkspacePackageDirs(rootDir, baseDir, matcher, dirs) {
+	try {
+		for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
+			if (!entry.isDirectory() || EXCLUDED_DIRS.has(entry.name)) continue;
+			const dir = join(baseDir, entry.name);
+			if (!isInsideDirectory(rootDir, dir)) continue;
+			const rel = normalizeRelativePath(relative(rootDir, dir));
+			const packageDir = matcher.test(rel)
+				? packageDirIfValid(rootDir, dir)
+				: null;
+			if (packageDir) dirs.push(packageDir);
+			collectWorkspacePackageDirs(rootDir, dir, matcher, dirs);
+		}
+	} catch {
+		// Ignore missing or unreadable workspace pattern roots.
+	}
+}
+
+function workspacePackageDirs(rootDir) {
+	const dirs = [];
+	for (const pattern of workspacePatterns(rootDir)) {
+		const base = workspacePatternBase(pattern);
+		if (!base || isAbsolute(base)) continue;
+		const baseDir = resolve(rootDir, base);
+		if (!isInsideDirectory(rootDir, baseDir)) continue;
+		if (!pattern.includes("*")) {
+			const dir = packageDirIfValid(rootDir, baseDir);
+			if (dir) dirs.push(dir);
+			continue;
+		}
+		collectWorkspacePackageDirs(
+			rootDir,
+			baseDir,
+			workspacePatternRegExp(pattern),
+			dirs,
+		);
+	}
+	return [...new Set(dirs)];
+}
+
+function workspacePackageDirByName(rootDir, name) {
+	return (
+		workspacePackageDirs(rootDir).find(
+			(dir) => readPackageJson(join(dir, "package.json"))?.name === name,
+		) ?? null
+	);
+}
+
+function packageSelectorCandidates(value) {
+	if (!value) return [];
+	const trimmed = value.trim();
+	if (trimmed.startsWith("!")) return [];
+	const selector = trimmed
+		.replace(/^\.\.\./, "")
+		.replace(/\^?\.\.\.$/, "")
+		.replace(/^\{(.+)\}$/, "$1");
+	return [...new Set([trimmed, selector].filter(Boolean))];
+}
+
+function packageDirCandidate(rootDir, currentDir, value) {
+	if (!value || isAbsolute(value)) return null;
+	const values = packageSelectorCandidates(value);
+	const candidates = values.flatMap((candidate) => [
+		resolve(currentDir, candidate),
+		resolve(rootDir, candidate),
+	]);
+	return (
+		candidates.find((dir) => packageDirIfValid(rootDir, dir)) ??
+		values
+			.map((candidate) => workspacePackageDirByName(rootDir, candidate))
+			.find(Boolean) ??
+		null
+	);
+}
+
+function packageDirFromRunOptions(
+	rootDir,
+	currentDir,
+	words,
+	startIndex,
+	endIndex,
+) {
+	for (let index = startIndex; index < endIndex; index += 1) {
+		const word = words[index];
+		const name = runOptionName(word);
+		if (
+			[
+				"--workspace",
+				"-w",
+				"--filter",
+				"-F",
+				"--cwd",
+				"--dir",
+				"--prefix",
+				"-C",
+			].includes(name)
+		) {
+			const dir = packageDirCandidate(
+				rootDir,
+				currentDir,
+				optionValue(words, index),
+			);
+			if (dir) return dir;
+		}
+		if (runOptionConsumesNext(word)) index += 1;
+	}
+	return null;
 }
 
 function skipRunOptions(words, startIndex) {
@@ -978,63 +1264,286 @@ function skipRunOptions(words, startIndex) {
 	return index;
 }
 
-function scriptNameAfterRunOptions(words, startIndex) {
-	return words[skipRunOptions(words, startIndex)] ?? null;
+function scriptArgsDelimiterIndex(words, startIndex) {
+	const delimiterIndex = words.indexOf("--", startIndex);
+	return delimiterIndex === -1 ? words.length : delimiterIndex;
 }
 
-function packageManagerScriptName(words, packageManagerIndex) {
+function forwardedScriptArgs(words, delimiterIndex) {
+	return delimiterIndex < words.length
+		? words.slice(delimiterIndex + 1).join(" ")
+		: "";
+}
+
+function appendScriptArgs(script, args) {
+	return args ? `${script} ${args}` : script;
+}
+
+function packageManagerScriptReference(
+	rootDir,
+	currentDir,
+	words,
+	packageManagerIndex,
+) {
 	const commandIndex = skipRunOptions(words, packageManagerIndex + 1);
 	const command = words[commandIndex];
+	let packageDir = packageDirFromRunOptions(
+		rootDir,
+		currentDir,
+		words,
+		packageManagerIndex + 1,
+		commandIndex,
+	);
 	if (RUN_SCRIPT_COMMANDS.has(command)) {
-		return scriptNameAfterRunOptions(words, commandIndex + 1);
+		const scriptIndex = skipRunOptions(words, commandIndex + 1);
+		packageDir ??= packageDirFromRunOptions(
+			rootDir,
+			currentDir,
+			words,
+			commandIndex + 1,
+			scriptIndex,
+		);
+		const scriptArgsIndex = scriptArgsDelimiterIndex(words, scriptIndex + 1);
+		packageDir ??= packageDirFromRunOptions(
+			rootDir,
+			currentDir,
+			words,
+			scriptIndex + 1,
+			scriptArgsIndex,
+		);
+		const name = words[scriptIndex] ?? null;
+		return name
+			? {
+					name,
+					packageDir: packageDir ?? currentDir,
+					args: forwardedScriptArgs(words, scriptArgsIndex),
+				}
+			: null;
 	}
-	return LIFECYCLE_SCRIPT_COMMANDS.has(command) ? command : null;
+	if (LIFECYCLE_SCRIPT_COMMANDS.has(command)) {
+		const scriptArgsIndex = scriptArgsDelimiterIndex(words, commandIndex + 1);
+		packageDir ??= packageDirFromRunOptions(
+			rootDir,
+			currentDir,
+			words,
+			commandIndex + 1,
+			scriptArgsIndex,
+		);
+		return {
+			name: command,
+			packageDir: packageDir ?? currentDir,
+			args: forwardedScriptArgs(words, scriptArgsIndex),
+		};
+	}
+	return null;
 }
 
-function yarnScriptName(words, yarnIndex) {
+function yarnScriptReference(rootDir, currentDir, words, yarnIndex) {
 	let commandIndex = skipRunOptions(words, yarnIndex + 1);
 	let command = words[commandIndex];
+	let packageDir = packageDirFromRunOptions(
+		rootDir,
+		currentDir,
+		words,
+		yarnIndex + 1,
+		commandIndex,
+	);
 	if (command === "workspace") {
+		packageDir = packageDirCandidate(
+			rootDir,
+			currentDir,
+			words[commandIndex + 1],
+		);
 		commandIndex = skipRunOptions(words, commandIndex + 2);
 		command = words[commandIndex];
 	}
-	if (command === "run")
-		return scriptNameAfterRunOptions(words, commandIndex + 1);
+	if (command === "run") {
+		const scriptIndex = skipRunOptions(words, commandIndex + 1);
+		packageDir ??= packageDirFromRunOptions(
+			rootDir,
+			currentDir,
+			words,
+			commandIndex + 1,
+			scriptIndex,
+		);
+		const scriptArgsIndex = scriptArgsDelimiterIndex(words, scriptIndex + 1);
+		const name = words[scriptIndex] ?? null;
+		return name
+			? {
+					name,
+					packageDir: packageDir ?? currentDir,
+					args: forwardedScriptArgs(words, scriptArgsIndex),
+				}
+			: null;
+	}
 	if (["exec", "dlx"].includes(command)) return null;
-	return command && !command.startsWith("-") ? command.split("/").at(-1) : null;
+	return command && !command.startsWith("-")
+		? { name: command.split("/").at(-1), packageDir: packageDir ?? currentDir }
+		: null;
 }
 
-function delegatedScriptNames(command) {
+function delegatedScriptReferences(rootDir, command, currentDir) {
 	if (!command) return [];
-	const names = [];
+	const refs = [];
 	for (const line of command.split(/\n+/)) {
 		for (const segment of line.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
 			const words = segment.trim().split(/\s+/).filter(Boolean);
 			for (let index = 0; index < words.length; index += 1) {
 				const word = words[index].split("/").at(-1);
-				const scriptName = ["npm", "pnpm", "bun"].includes(word)
-					? packageManagerScriptName(words, index)
+				const ref = ["npm", "pnpm", "bun"].includes(word)
+					? packageManagerScriptReference(rootDir, currentDir, words, index)
 					: word === "yarn"
-						? yarnScriptName(words, index)
+						? yarnScriptReference(rootDir, currentDir, words, index)
 						: null;
-				if (scriptName) names.push(scriptName);
+				if (ref) refs.push(ref);
 			}
 		}
 	}
-	return names;
+	return refs;
 }
 
-function expandedScriptCommand(pkg, command, seen = new Set()) {
-	const scripts = pkg.scripts ?? {};
-	const parts = [command];
-	for (const scriptName of delegatedScriptNames(command)) {
-		if (seen.has(scriptName)) continue;
-		seen.add(scriptName);
-		const script = scripts[scriptName];
-		if (typeof script !== "string") continue;
-		parts.push(expandedScriptCommand(pkg, script, seen));
+function directRunnerPackageContexts(rootDir, command, currentDir, currentPkg) {
+	if (!inferRunner(command)) return [];
+	const contexts = [];
+	for (const line of command.split(/\n+/)) {
+		for (const segment of line.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
+			const words = segment.trim().split(/\s+/).filter(Boolean);
+			if (!inferRunner(segment)) continue;
+			let packageDir = null;
+			const first = words[0]?.split("/").at(-1);
+			if (["npm", "pnpm", "bun"].includes(first)) {
+				const commandIndex = skipRunOptions(words, 1);
+				const executableIndex = skipRunOptions(words, commandIndex + 1);
+				packageDir =
+					packageDirFromRunOptions(
+						rootDir,
+						currentDir,
+						words,
+						1,
+						commandIndex,
+					) ??
+					packageDirFromRunOptions(
+						rootDir,
+						currentDir,
+						words,
+						commandIndex + 1,
+						executableIndex,
+					);
+			} else if (first === "yarn") {
+				let commandIndex = skipRunOptions(words, 1);
+				let runnerCommand = words[commandIndex];
+				packageDir = packageDirFromRunOptions(
+					rootDir,
+					currentDir,
+					words,
+					1,
+					commandIndex,
+				);
+				if (runnerCommand === "workspace") {
+					packageDir = packageDirCandidate(
+						rootDir,
+						currentDir,
+						words[commandIndex + 1],
+					);
+					commandIndex = skipRunOptions(words, commandIndex + 2);
+					runnerCommand = words[commandIndex];
+				}
+				const executableIndex = ["exec", "dlx"].includes(runnerCommand)
+					? skipRunOptions(words, commandIndex + 1)
+					: commandIndex;
+				packageDir ??= packageDirFromRunOptions(
+					rootDir,
+					currentDir,
+					words,
+					commandIndex + 1,
+					executableIndex,
+				);
+			}
+			const resolvedDir = packageDir ?? currentDir;
+			contexts.push({
+				packageDir: resolvedDir,
+				packageJson:
+					resolvedDir === currentDir
+						? currentPkg
+						: readPackageJson(join(resolvedDir, "package.json")),
+				command: segment,
+			});
+		}
 	}
-	return parts.join("\n");
+	if (contexts.length === 0) {
+		contexts.push({
+			packageDir: currentDir,
+			packageJson: currentPkg,
+			command,
+		});
+	}
+	return contexts.filter((context) => context.packageJson);
+}
+
+function scriptExpansionDetails(
+	rootDir,
+	pkg,
+	command,
+	seen = new Set(),
+	currentDir = rootDir,
+	activeScripts = new Set(),
+) {
+	const parts = [command];
+	const directContexts = directRunnerPackageContexts(
+		rootDir,
+		command,
+		currentDir,
+		pkg,
+	);
+	let packageDir = directContexts[0]?.packageDir ?? null;
+	let packageJson = directContexts[0]?.packageJson ?? null;
+	const packageContexts = [...directContexts];
+	for (const ref of delegatedScriptReferences(rootDir, command, currentDir)) {
+		const scriptPkg =
+			ref.packageDir === currentDir
+				? pkg
+				: readPackageJson(join(ref.packageDir, "package.json"));
+		const script = scriptPkg?.scripts?.[ref.name];
+		if (typeof script !== "string") continue;
+		const activeKey = `${ref.packageDir}:${ref.name}`;
+		if (activeScripts.has(activeKey)) continue;
+		const key = `${activeKey}:${ref.args ?? ""}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		activeScripts.add(activeKey);
+		try {
+			const scriptCommand = appendScriptArgs(script, ref.args ?? "");
+			const child = scriptExpansionDetails(
+				rootDir,
+				scriptPkg ?? pkg,
+				scriptCommand,
+				seen,
+				ref.packageDir,
+				activeScripts,
+			);
+			parts.push(child.expandedCommand);
+			if (!packageDir) {
+				packageDir = child.packageDir;
+				packageJson = child.pkg;
+			}
+			packageContexts.push(...child.packageContexts);
+		} finally {
+			activeScripts.delete(activeKey);
+		}
+	}
+	return {
+		expandedCommand: parts.join("\n"),
+		packageDir: packageDir ?? currentDir,
+		pkg: packageJson ?? pkg,
+		packageContexts: [
+			...new Map(
+				packageContexts.map((context) => [
+					`${context.packageDir}:${context.command ?? ""}`,
+					context,
+				]),
+			).values(),
+		],
+	};
 }
 
 function packageManagerFromField(pkg) {
@@ -1116,35 +1625,44 @@ function coveragePlan(
 	const runCommand = (scriptName) =>
 		`${packageManagerName ?? detectPackageManager(rootDir, pkg).manager} run ${scriptName}`;
 	if (overrideCommand) {
-		const expandedCommand = expandedScriptCommand(pkg, overrideCommand);
+		const expansion = scriptExpansionDetails(rootDir, pkg, overrideCommand);
 		return {
 			command: overrideCommand,
-			expandedCommand,
+			expandedCommand: expansion.expandedCommand,
+			packageDir: expansion.packageDir,
+			packageJson: expansion.pkg,
+			packageContexts: expansion.packageContexts,
 			source: "override",
 			script: null,
-			runner: inferRunner(expandedCommand),
+			runner: inferRunner(expansion.expandedCommand),
 		};
 	}
 	if (typeof scripts["test:coverage"] === "string") {
 		const script = scripts["test:coverage"];
-		const expandedCommand = expandedScriptCommand(pkg, script);
+		const expansion = scriptExpansionDetails(rootDir, pkg, script);
 		return {
 			command: runCommand("test:coverage"),
-			expandedCommand,
+			expandedCommand: expansion.expandedCommand,
+			packageDir: expansion.packageDir,
+			packageJson: expansion.pkg,
+			packageContexts: expansion.packageContexts,
 			source: "script:test:coverage",
 			script,
-			runner: inferRunner(expandedCommand),
+			runner: inferRunner(expansion.expandedCommand),
 		};
 	}
 	if (typeof scripts.coverage === "string") {
 		const script = scripts.coverage;
-		const expandedCommand = expandedScriptCommand(pkg, script);
+		const expansion = scriptExpansionDetails(rootDir, pkg, script);
 		return {
 			command: runCommand("coverage"),
-			expandedCommand,
+			expandedCommand: expansion.expandedCommand,
+			packageDir: expansion.packageDir,
+			packageJson: expansion.pkg,
+			packageContexts: expansion.packageContexts,
 			source: "script:coverage",
 			script,
-			runner: inferRunner(expandedCommand),
+			runner: inferRunner(expansion.expandedCommand),
 		};
 	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "vitest"))) {
@@ -1157,6 +1675,9 @@ function coveragePlan(
 			script: null,
 			runner: "vitest",
 			expandedCommand: "./node_modules/.bin/vitest run --coverage",
+			packageDir: rootDir,
+			packageJson: pkg,
+			packageContexts: [{ packageDir: rootDir, packageJson: pkg }],
 		};
 	}
 	if (existsSync(join(rootDir, "node_modules", ".bin", "jest"))) {
@@ -1169,6 +1690,9 @@ function coveragePlan(
 			script: null,
 			runner: "jest",
 			expandedCommand: "./node_modules/.bin/jest --coverage",
+			packageDir: rootDir,
+			packageJson: pkg,
+			packageContexts: [{ packageDir: rootDir, packageJson: pkg }],
 		};
 	}
 	return null;
@@ -1192,6 +1716,27 @@ function missingVitestCoverageProviders(dependencies, plan) {
 	return dependencies.get("@vitest/coverage-v8")?.status === "ok"
 		? []
 		: ["@vitest/coverage-v8"];
+}
+
+function relevantCoverageDependencyNames(runner, command) {
+	if (runner === "vitest") {
+		return new Set([
+			"typescript",
+			"vitest",
+			selectedVitestCoverageProvider({ expandedCommand: command }) ??
+				"@vitest/coverage-v8",
+		]);
+	}
+	if (runner === "jest") return new Set(["typescript", "jest"]);
+	return new Set(["typescript"]);
+}
+
+function pickDependencyStates(dependencies, names) {
+	return new Map(
+		[...names]
+			.map((name) => [name, dependencies.get(name)])
+			.filter((entry) => entry[1]),
+	);
 }
 
 const STRYKER_CONFIG_FILES = [
@@ -1313,6 +1858,8 @@ export function inspectDependencyPreflight(
 	const plan = noCoverage
 		? null
 		: coveragePlan(rootDir, pkg, coverageCommand, packageManager.manager);
+	const dependencyRootDir = plan?.packageDir ?? rootDir;
+	const dependencyPackage = plan?.packageJson ?? pkg;
 	const dependencyNames = new Set([
 		"typescript",
 		"vitest",
@@ -1320,34 +1867,91 @@ export function inspectDependencyPreflight(
 		...VITEST_COVERAGE_PROVIDERS,
 		...STRYKER_PACKAGES,
 	]);
-	const dependencies = new Map(
-		[...dependencyNames].map((name) => [
-			name,
-			dependencyState(rootDir, pkg, name, packageManager.manager),
-		]),
+	const dependencies = buildDependencyMap(
+		dependencyRootDir,
+		dependencyPackage,
+		dependencyNames,
+		packageManager.manager,
+		rootDir,
+		pkg,
 	);
-	applyCompatibilityChecks(dependencies);
-	const missingCoverage = [];
-	if (plan?.runner === "vitest") {
-		if (dependencies.get("vitest")?.status !== "ok") {
-			missingCoverage.push("vitest");
+	const mutationDependencies = buildDependencyMap(
+		rootDir,
+		pkg,
+		dependencyNames,
+		packageManager.manager,
+	);
+	const missingCoverage = new Set();
+	const coverageContexts = plan?.packageContexts?.length
+		? plan.packageContexts
+		: [{ packageDir: dependencyRootDir, packageJson: dependencyPackage }];
+	const coverageDependenciesByContext = [];
+	if (plan?.runner) {
+		for (const context of coverageContexts) {
+			const contextCommand =
+				context.command ?? plan.expandedCommand ?? plan.command;
+			const contextRunner = inferRunner(contextCommand) ?? plan.runner;
+			const declaredNames =
+				contextRunner === "vitest"
+					? ["vitest", ...VITEST_COVERAGE_PROVIDERS]
+					: contextRunner === "jest"
+						? ["jest"]
+						: [];
+			const fallbackAllowed = !packageDeclaresAnyDependency(
+				context.packageJson,
+				declaredNames,
+			);
+			const coverageDependencies = buildDependencyMap(
+				context.packageDir,
+				context.packageJson,
+				dependencyNames,
+				packageManager.manager,
+				fallbackAllowed ? rootDir : null,
+				fallbackAllowed ? pkg : null,
+			);
+			coverageDependenciesByContext.push(
+				pickDependencyStates(
+					coverageDependencies,
+					relevantCoverageDependencyNames(contextRunner, contextCommand),
+				),
+			);
+			if (contextRunner === "vitest") {
+				if (coverageDependencies.get("vitest")?.status !== "ok") {
+					missingCoverage.add("vitest");
+				}
+				for (const name of missingVitestCoverageProviders(
+					coverageDependencies,
+					{ ...plan, expandedCommand: contextCommand },
+				)) {
+					missingCoverage.add(name);
+				}
+			} else if (contextRunner === "jest") {
+				if (coverageDependencies.get("jest")?.status !== "ok") {
+					missingCoverage.add("jest");
+				}
+			}
 		}
-		missingCoverage.push(...missingVitestCoverageProviders(dependencies, plan));
-	} else if (plan?.runner === "jest") {
-		if (dependencies.get("jest")?.status !== "ok") missingCoverage.push("jest");
 	}
+	const coverageDependencies = coverageDependenciesByContext.reduce(
+		(merged, contextDependencies) =>
+			mergeDependencyMap(merged, contextDependencies),
+		new Map(),
+	);
 	return {
 		packageManager,
 		coverage: {
 			plan,
-			missing: missingCoverage,
+			missing: [...missingCoverage],
+			dependencies:
+				coverageDependencies.size > 0 ? coverageDependencies : dependencies,
 		},
 		mutation: {
 			missing: missingMutationPackages(
 				rootDir,
-				dependencies,
+				mutationDependencies,
 				plan?.runner ?? null,
 			),
+			dependencies: mutationDependencies,
 		},
 		dependencies,
 	};
@@ -1375,7 +1979,9 @@ export function formatDependencyPreflight(preflight) {
 		"jest",
 		...VITEST_COVERAGE_PROVIDERS,
 	]) {
-		const dep = preflight.dependencies.get(name);
+		const dep = (preflight.coverage.dependencies ?? preflight.dependencies).get(
+			name,
+		);
 		if (dep) lines.push(`  - ${name}: ${dep.status}`);
 	}
 	if (preflight.coverage.missing.length > 0) {
@@ -1385,7 +1991,9 @@ export function formatDependencyPreflight(preflight) {
 	}
 	lines.push("mutation:");
 	for (const name of STRYKER_PACKAGES) {
-		const dep = preflight.dependencies.get(name);
+		const dep = (preflight.mutation.dependencies ?? preflight.dependencies).get(
+			name,
+		);
 		if (dep) lines.push(`  - ${name}: ${dep.status}`);
 	}
 	if (preflight.mutation.missing.length > 0) {
