@@ -1,6 +1,8 @@
 ---
 name: typesafe-ai
 license: MIT
+metadata:
+  source: "Vendored verbatim from https://raw.githubusercontent.com/typesafe-ai/skills/main/skills/typesafe-ai/SKILL.md (MIT); only this metadata block is local."
 description: >
   Build AI-powered software with TypeSafe: small units of AI intelligence you
   can use like programming primitives. Its System One models, including Jev,
