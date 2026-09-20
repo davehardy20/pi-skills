@@ -26,16 +26,15 @@ thresholds, and composition in code.
 - **Local pi-kev** (default) — `http://127.0.0.1:8012/v1/systemone`
   - Allowed: anything internal — repo code, diffs, session transcripts,
     agent-run data, internal project names.
-  - Never: credentials, tokens, secrets (the client caches full request
-    bodies to disk).
+  - Never: credentials, tokens, secrets.
 - **Hosted Jev** (opt-in) — `https://api.typesafe.ai/v1/systemone`
   - Allowed: synthetic/public-shaped state ONLY.
   - Never: internal repo content, session data, filesystem paths, secrets,
     threat-emulation material — the classic jev-oracle gate, unchanged.
 
-Why secrets are forbidden even locally: the client caches complete request
-bodies to disk under `~/tools/pi-kev/experiments/jev-probe/.cache/`, and
-defense-in-depth beats habit drift if a transport ever changes.
+Secrets stay forbidden even on the local transport as defense-in-depth:
+transports can change, and the client persists responses to disk under
+`~/tools/pi-kev/experiments/jev-probe/cache/`.
 
 **Default to local.** Reach for hosted Jev only for (a) ceiling benchmarking
 against pi-kev on identical public-shaped fixtures, or (b) a second opinion
@@ -67,6 +66,11 @@ The client auto-detects local URLs (no Authorization header, responses tagged
 `"endpoint": "local"`), caches both transports, and logs only hashes/token
 counts for hosted egress. The local service reports model id `jev-latest`
 regardless of the underlying run — check `/api/info` for the served run.
+
+Cache keys cover state + questions + model but NOT the endpoint — identical
+fixtures asked of both transports collide. For local-vs-hosted ceiling
+comparisons pass `--no-cache` (or distinct `--model` strings per transport),
+and check `cache_hit` / `endpoint` in the output before trusting a comparison.
 
 `questions.json` shape (`criteria` maps options to rubric descriptions; for
 `score` it is an ordered array of level descriptions):
