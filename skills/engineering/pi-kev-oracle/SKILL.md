@@ -119,8 +119,9 @@ nested state with backticked paths like `ticket.messages[0].text`.
   numbers in code and ask the model only about meaning.
 - `confidence` is distribution concentration, not correctness. A noul near
   0.5 means the evidence genuinely cuts both ways — or you asked it math.
-- Exam reference: 88/95 on the frozen pi-kev-eval-v1 vs Jev's 91 (Jev wins
-  control-bug; pi-kev wins debt-ties and permutation).
+- Exam reference: 88/95 on the frozen pi-kev-eval-v1 vs Jev's 91 — Jev's
+  edge is concentrated in the clean variant (56/58 vs 52/58); pi-kev wins
+  control-bug 3/3 vs 2/3; debt, control-verified, and permutation tie.
 
 ## Practical norms — HOSTED Jev (measured 2026-09, jev-1.13.0)
 
