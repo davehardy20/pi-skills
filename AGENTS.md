@@ -27,8 +27,8 @@ This repository packages local Pi skills.
   - `skills/engineering/code-review/SKILL.md`
   - `skills/engineering/codex-pr-comment/SKILL.md`
   - `skills/engineering/crap4ts/SKILL.md`
-  - `skills/engineering/jev-oracle/SKILL.md`
   - `skills/engineering/opsec-framework-doc/SKILL.md`
+  - `skills/engineering/pi-kev-oracle/SKILL.md`
   - `skills/engineering/post-merge/SKILL.md`
   - `skills/engineering/seeds-architecture-review/SKILL.md`
   - `skills/engineering/seeds-issue-audit/SKILL.md`
