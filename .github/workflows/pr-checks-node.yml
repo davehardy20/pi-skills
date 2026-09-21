@@ -19,44 +19,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
-          cache: npm
-          # Porting note: `cache: npm` requires a lockfile (present here);
-          # without one, omit it — the npm-install fallback below then works.
+          # This repo keeps package-lock.json untracked (local package), so
+          # no `cache: npm` (it requires a committed lockfile) and the
+          # npm-install fallback below is the live path. Repos that commit
+          # a lockfile should re-add `cache: npm` for faster installs.
 
       - name: Detect repository capabilities
         id: detect
         shell: bash
-        run: |
-          set -euo pipefail
-
-          node <<'NODE'
-          const fs = require('node:fs');
-          const pkg = fs.existsSync('package.json')
-            ? JSON.parse(fs.readFileSync('package.json', 'utf8'))
-            : { scripts: {} };
-          const scripts = pkg.scripts || {};
-          const hasAny = (paths) => paths.some((path) => fs.existsSync(path));
-          const out = process.env.GITHUB_OUTPUT;
-          const lines = [
-            `has_package_json=${fs.existsSync('package.json')}`,
-            `has_lockfile=${hasAny(['package-lock.json', 'npm-shrinkwrap.json'])}`,
-            `has_lint=${Boolean(scripts.lint)}`,
-            `has_typecheck=${Boolean(scripts.typecheck || hasAny(['tsconfig.json']))}`,
-            `has_typecheck_script=${Boolean(scripts.typecheck)}`,
-            `has_test=${Boolean(scripts.test || hasAny(['vitest.config.ts', 'vitest.config.js', 'jest.config.js', 'jest.config.ts']))}`,
-            `has_test_script=${Boolean(scripts.test)}`,
-            `has_validate_skills=${Boolean(scripts['validate:skills'])}`,
-            `has_build=${Boolean(scripts.build)}`,
-            `has_audit=${hasAny(['package-lock.json', 'npm-shrinkwrap.json'])}`,
-          ];
-          fs.appendFileSync(out, `${lines.join('\n')}\n`);
-          NODE
+        run: node scripts/detect-node-checks.mjs
 
       - name: No Node package detected
         if: steps.detect.outputs.has_package_json != 'true'
