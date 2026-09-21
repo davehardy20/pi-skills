@@ -5,13 +5,17 @@
 // the workflow's step conditions.
 
 import fs from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const LOCKFILES = ["package-lock.json", "npm-shrinkwrap.json"];
 
 export function capabilities(pkg, exists) {
 	const scripts = pkg?.scripts ?? {};
 	const hasAny = (paths) => paths.some((path) => exists(path));
 	return {
 		has_package_json: pkg !== undefined,
-		has_lockfile: hasAny(["package-lock.json", "npm-shrinkwrap.json"]),
+		has_lockfile: hasAny(LOCKFILES),
 		has_lint: Boolean(scripts.lint),
 		has_typecheck: Boolean(scripts.typecheck || hasAny(["tsconfig.json"])),
 		has_typecheck_script: Boolean(scripts.typecheck),
@@ -23,7 +27,7 @@ export function capabilities(pkg, exists) {
 		has_test_script: Boolean(scripts.test),
 		has_validate_skills: Boolean(scripts["validate:skills"]),
 		has_build: Boolean(scripts.build),
-		has_audit: hasAny(["package-lock.json", "npm-shrinkwrap.json"]),
+		has_audit: hasAny(LOCKFILES),
 	};
 }
 
@@ -47,6 +51,9 @@ export function main() {
 	}
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+	process.argv[1] &&
+	fileURLToPath(import.meta.url) === resolve(process.argv[1])
+) {
 	main();
 }

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -109,5 +109,25 @@ describe("detect-node-checks", () => {
 		const { code, err } = runIn(dir);
 		expect(code).toBe(1);
 		expect(err).toContain("package.json is not valid JSON");
+	});
+
+	it("appends key=value lines plus trailing newline to GITHUB_OUTPUT", async () => {
+		const dir = await makeRepo({
+			"package.json": JSON.stringify({ scripts: {} }),
+		});
+		const outPath = resolve(dir, "github_output.txt");
+		await writeFile(outPath, "");
+		const res = spawnSync(process.execPath, [scriptPath], {
+			cwd: dir,
+			env: { ...process.env, GITHUB_OUTPUT: outPath },
+			encoding: "utf8",
+		});
+		expect(res.status).toBe(0);
+		expect(res.stdout).toBe("");
+		const written = await readFile(outPath, "utf8");
+		expect(written.endsWith("\n")).toBe(true);
+		const lines = written.trimEnd().split("\n");
+		expect(lines[0]).toBe("has_package_json=true");
+		expect(lines).toContain("has_test=false");
 	});
 });
