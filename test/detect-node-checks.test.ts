@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -129,5 +129,19 @@ describe("detect-node-checks", () => {
 		const lines = written.trimEnd().split("\n");
 		expect(lines[0]).toBe("has_package_json=true");
 		expect(lines).toContain("has_test=false");
+	});
+
+	it("runs as CLI from a path containing spaces", async () => {
+		const dir = await mkdtemp(resolve(tmpdir(), "detect dir-"));
+		dirs.push(dir);
+		const script = resolve(dir, "detect-node-checks.mjs");
+		await copyFile(scriptPath, script);
+		const res = spawnSync(process.execPath, [script], {
+			cwd: dir,
+			env: { ...process.env, GITHUB_OUTPUT: "" },
+			encoding: "utf8",
+		});
+		expect(res.status).toBe(0);
+		expect(res.stdout).toContain("has_package_json=false");
 	});
 });

@@ -4,7 +4,7 @@
 // Extracted from the workflow for testability; keep outputs in sync with
 // the workflow's step conditions.
 
-import fs from "node:fs";
+import fs, { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -51,9 +51,20 @@ export function main() {
 	}
 }
 
+// Node realpaths import.meta.url, so argv[1] must be realpathed too —
+// otherwise a symlinked tmpdir (macOS /var -> /private/var) defeats the
+// comparison, as does percent-encoded spacing without fileURLToPath.
+function realpathGuard(p) {
+	try {
+		return realpathSync(p);
+	} catch {
+		return resolve(p);
+	}
+}
+
 if (
 	process.argv[1] &&
-	fileURLToPath(import.meta.url) === resolve(process.argv[1])
+	realpathGuard(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
 	main();
 }
