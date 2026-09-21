@@ -4,9 +4,7 @@ description: >-
   Create structured OpSec framework documentation for authorized red-team and
   threat-emulation work. Use when Dave asks for operational security
   documentation from notes, research, web/Obsidian sources, existing markdown,
-  or script-heavy procedures; includes discovery, similarity checks,
-  archive/history management, humanized Markdown output, and extracted script
-  references.
+  or script-heavy procedures.
 compatibility: >-
   Designed for Pi. Uses web/Obsidian/search tools and the humanizer skill when
   available; otherwise records missing-source gaps. Optional TypeScript

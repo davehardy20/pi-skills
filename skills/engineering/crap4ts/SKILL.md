@@ -3,8 +3,7 @@ name: crap4ts
 description: >-
   Use when Dave asks for a CRAP report, cyclomatic complexity + coverage risk
   analysis, "what's the riskiest code to change", or before refactoring a
-  JavaScript or TypeScript module. Combines cyclomatic complexity with test
-  coverage to find functions that are both complex and under-tested.
+  JavaScript or TypeScript module.
 metadata:
   source: >-
     Independent implementation of the CRAP formula from crap4j (Alberto Savoia
