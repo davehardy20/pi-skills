@@ -33,6 +33,7 @@ Local supplemental guides are part of this skill:
 - Mulch is post-outcome only.
 - Use a feature branch before target-repo mutations when practical.
 - Prefer PR-first closeout for repository-changing work.
+- Depend only on the local supplemental guides in this skill directory.
 
 ## Architecture vocabulary
 
