@@ -4,12 +4,31 @@ Local Pi skills package for Dave's workflow.
 
 ## Skills
 
+### Engineering
+
 - `code-review` — reviews changes on independent Standards and Seeds-backed
   Intent axes, then returns actionable findings directly to the parent agent
   without writing review outcomes back to Seeds.
 - `codex-pr-comment` — reads Codex connector PR review comments,
   checks unresolved non-outdated review threads, implements required fixes, and
   reports validation.
+- `crap4ts` — CRAP metric (originally Change Risk Analysis and Prediction,
+  later reframed as Change Risk Anti-Patterns;
+  `CC² × (1 − coverage)³ + CC`) for JavaScript/TypeScript: runs the target
+  project's Istanbul coverage, extracts cyclomatic complexity via the
+  TypeScript compiler API, and reports the worst functions first with a
+  `--fail-over` quality-gate exit code. Lineage: crap4j → crap4clj →
+  crap4go → crap4java → crap4ts.
+- `opsec-framework-doc` — creates structured OpSec procedure documents from
+  notes, research, existing Markdown, and script-heavy procedures, with
+  archive/history safety and TypeScript document-management helpers.
+- `pi-kev-oracle` — consults the local Pi-Kev decision model (self-hosted,
+  :8012) for typed probabilistic judgments: noul yes/no, one-of-a-set
+  choices, ordered scores. Fail-closed endpoint resolution; hosted Jev is an
+  explicit opt-in. Procedure detail in its `REFERENCE.md`.
+- `post-merge` — runs PR post-merge closeout for Pi/Seeds repos, including
+  merge verification, local branch updates, Seeds follow-up handling, and
+  cleanup reporting.
 - `seeds-architecture-review` — adapts architecture deepening reviews into a Seeds-native workflow with:
   - local supplemental guides for language, deepening, HTML reports, and interface design;
   - optional `ask_user` checkpoints;
@@ -19,28 +38,25 @@ Local Pi skills package for Dave's workflow.
 - `seeds-issue-audit` — audits open Seeds issues using verified completion
   evidence, reports uncertainty by default, and requires explicit authorization
   before closing high-confidence findings.
-- `humanizer` — removes common AI-writing patterns while preserving meaning,
-  tone, and voice.
+- `thermo-nuclear-code-quality-review` — runs an intentionally strict
+  maintainability review for abstraction quality, file sprawl, spaghetti
+  branching, and missed simplification opportunities.
+- `typesafe-ai` — vendored verbatim from the upstream TypeSafe AI skills
+  package (MIT): build software with small units of AI intelligence (System
+  One models, including Jev) used like programming primitives. The live
+  TypeSafe docs remain the source of truth.
+
+### Productivity
+
 - `teach` — builds stateful learning workspaces with missions, trusted
   resources, short HTML lessons, references, and learning records.
 - `writing-great-skills` — explains the vocabulary and principles for writing
   predictable, maintainable Pi skills.
-- `opsec-framework-doc` — creates structured OpSec procedure documents from
-  notes, research, existing Markdown, and script-heavy procedures, with
-  archive/history safety and TypeScript document-management helpers.
-- `post-merge` — runs PR post-merge closeout for Pi/Seeds repos, including
-  merge verification, local branch updates, Seeds follow-up handling, and
-  cleanup reporting.
-- `thermo-nuclear-code-quality-review` — runs an intentionally strict
-  maintainability review for abstraction quality, file sprawl, spaghetti
-  branching, and missed simplification opportunities.
-- `crap4ts` — CRAP metric (originally Change Risk Analysis and Prediction,
-  later reframed as Change Risk Anti-Patterns;
-  `CC² × (1 − coverage)³ + CC`) for JavaScript/TypeScript: runs the target
-  project's Istanbul coverage, extracts cyclomatic complexity via the
-  TypeScript compiler API, and reports the worst functions first with a
-  `--fail-over` quality-gate exit code. Lineage: crap4j → crap4clj →
-  crap4go → crap4java → crap4ts.
+
+### Writing
+
+- `humanizer` — removes common AI-writing patterns while preserving meaning,
+  tone, and voice.
 
 ## Attribution
 
@@ -84,6 +100,11 @@ Savoia and Bob Evans for crap4j, modeled on Robert C. Martin's later
 language-specific ports (`crap4clj`, `crap4go`, and `crap4java`). See
 `skills/engineering/crap4ts/ATTRIBUTION.md` for the full lineage and formula
 source.
+
+`typesafe-ai` is vendored verbatim from the upstream MIT-licensed
+`typesafe-ai/skills` repository; only its local metadata block is original.
+Upstream remains the source of truth and should be re-vendored rather than
+forked.
 
 `opsec-framework-doc` was ported from Dave's OpenCode skill in
 `~/Desktop/opsec-framework-doc`. The Pi port preserves the template, sample
@@ -197,6 +218,14 @@ Mutation gate (Stryker, scoped via `stryker.config.json`):
 npm run mutation
 ```
 
-Reports land in `reports/mutation/` (gitignored); the run exits non-zero if the
-mutation score drops below the `thresholds.break` floor (currently 49,
-just under the present 49.56 baseline) in `stryker.config.json`.
+Reports land in `reports/mutation/` (gitignored); the run exits non-zero if
+the mutation score drops below the `thresholds.break` floor set in
+`stryker.config.json` — read the current value there rather than here, so
+this README cannot drift from the config.
+
+## CI
+
+Pull requests run `.github/workflows/pr-checks-node.yml` ("PR checks /
+Node"): capability detection, install, typecheck, tests, `validate:skills`,
+with advisory audit and secret scans. The "Typecheck and test" check is
+required on `main` via the repository ruleset.

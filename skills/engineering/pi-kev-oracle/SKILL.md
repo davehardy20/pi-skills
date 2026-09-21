@@ -2,13 +2,11 @@
 name: pi-kev-oracle
 description: >-
   Consult the local Pi-Kev decision model for fast, typed, probabilistic
-  semantic judgments: yes/no probabilities (noul), one-of-a-set choices, and
-  ordered scores. Internal state is allowed on this transport — repo diffs,
-  session data, and agent-run state stay on the box; hosted Jev is an explicit
-  opt-in for public-shaped state only. Strong at agent-workflow and diff
-  semantics; weak at arithmetic comparison. Use whenever a task needs semantic
-  classification, routing, ranking, evidence-strength or modality judgments,
-  or benchmarking of Pi-Kev against the Jev ceiling.
+  semantic judgments: noul yes/no probabilities, one-of-a-set choices,
+  ordered scores. Strong at agent-workflow and diff semantics; weak at
+  arithmetic. Use when a task needs semantic classification, routing,
+  ranking, evidence-strength or modality judgments, or Pi-Kev-vs-Jev
+  benchmarking.
 license: MIT
 metadata:
   source: "Local-first wrapper over the self-trained pi-kev model (~/tools/kev, ~/tools/pi-kev) with TypeSafe AI's hosted Jev as opt-in ceiling; upstream skill: typesafe-ai (vendored in this repo). Renamed from jev-oracle 2026-09-21; restructured procedure-first 2026-09-21."
