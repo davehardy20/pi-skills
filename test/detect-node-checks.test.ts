@@ -1,5 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	copyFile,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -131,14 +138,19 @@ describe("detect-node-checks", () => {
 		expect(lines).toContain("has_test=false");
 	});
 
-	it("runs as CLI from a path containing spaces", async () => {
+	it("runs as CLI through a symlink in a spaced path", async () => {
 		const dir = await mkdtemp(resolve(tmpdir(), "detect dir-"));
 		dirs.push(dir);
 		const script = resolve(dir, "detect-node-checks.mjs");
 		await copyFile(scriptPath, script);
-		const res = spawnSync(process.execPath, [script], {
+		// Explicit symlink makes the realpath mismatch deterministic on every
+		// platform: resolve(argv[1]) keeps the link path while import.meta.url
+		// resolves to the real script; the space in the dir also discriminates
+		// the older file://-concatenation guard (%20 vs literal space).
+		const link = resolve(dir, "link.mjs");
+		await symlink(script, link);
+		const res = spawnSync(process.execPath, [link], {
 			cwd: dir,
-			env: { ...process.env, GITHUB_OUTPUT: "" },
 			encoding: "utf8",
 		});
 		expect(res.status).toBe(0);
