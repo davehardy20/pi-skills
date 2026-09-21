@@ -227,5 +227,7 @@ this README cannot drift from the config.
 
 Pull requests run `.github/workflows/pr-checks-node.yml` ("PR checks /
 Node"): capability detection, install, typecheck, tests, `validate:skills`,
-with advisory audit and secret scans. The "Typecheck and test" check is
-required on `main` via the repository ruleset.
+plus an advisory secret scan. The advisory dependency audit runs only when a
+committed lockfile exists — this repo keeps its lockfile untracked, so that
+step self-skips here. The "Typecheck and test" check is required on `main`
+via the repository ruleset.
