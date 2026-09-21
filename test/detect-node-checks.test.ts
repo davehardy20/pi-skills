@@ -30,9 +30,18 @@ async function makeRepo(files: Record<string, string>): Promise<string> {
 	return dir;
 }
 
+// GitHub Actions sets GITHUB_OUTPUT for every step; stdout-asserting
+// spawns must strip it so the CLI never appends to a stray file in CI.
+function cleanEnv(): Record<string, string | undefined> {
+	const env = { ...process.env };
+	delete env.GITHUB_OUTPUT;
+	return env;
+}
+
 function runIn(dir: string) {
 	const res = spawnSync(process.execPath, [scriptPath], {
 		cwd: dir,
+		env: cleanEnv(),
 		encoding: "utf8",
 	});
 	return { code: res.status, out: res.stdout.trim(), err: res.stderr };
@@ -151,6 +160,7 @@ describe("detect-node-checks", () => {
 		await symlink(script, link);
 		const res = spawnSync(process.execPath, [link], {
 			cwd: dir,
+			env: cleanEnv(),
 			encoding: "utf8",
 		});
 		expect(res.status).toBe(0);
