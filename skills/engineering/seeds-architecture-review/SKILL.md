@@ -33,41 +33,13 @@ Local supplemental guides are part of this skill:
 - Mulch is post-outcome only.
 - Use a feature branch before target-repo mutations when practical.
 - Prefer PR-first closeout for repository-changing work.
-- Do not depend on `grill-with-docs` or any external skill content.
+- Use only the local supplemental guides in this skill directory for supplemental
+  guidance; do not depend on or link out to source repositories.
 
 ## Architecture vocabulary
 
 Use these words exactly. See [LANGUAGE.md](LANGUAGE.md) for full definitions, relationships,
 and rejected framings.
-
-- **Module**: anything with an interface and an implementation.
-- **Interface**: everything a caller must know to use a module correctly.
-- **Implementation**: the code inside a module.
-- **Depth**: leverage at the interface.
-- **Deep**: a lot of behaviour behind a small interface.
-- **Shallow**: the interface is nearly as complex as the implementation.
-- **Seam**: where an interface lives; a place behaviour can change without
-  editing that place.
-- **Adapter**: a concrete thing satisfying an interface at a seam.
-- **Leverage**: what callers get from depth.
-- **Locality**: what maintainers get from depth.
-
-Avoid these substitutions:
-
-- Use module, not component, service, or unit.
-- Use interface, not API or signature.
-- Use seam, not boundary.
-
-Key principles:
-
-- **Deletion test**: if deleting a module removes complexity, it was a pass-through.
-  If complexity reappears across callers, it was earning its keep.
-- **The interface is the test surface**: callers and tests should cross the same
-  seam.
-- **One adapter means a hypothetical seam. Two adapters mean a real seam.**
-- Depth is about leverage, not line-count ratios.
-- Depth is a property of the interface, not the implementation.
-- Internal seams can exist, but should not leak through the external interface.
 
 ## Workflow overview
 
@@ -156,19 +128,6 @@ Do not propose concrete new interfaces during the first exploration pass.
 
 Write a self-contained HTML report to the OS temp directory, not the repo.
 
-Use:
-
-- `$TMPDIR` when present;
-- `/tmp` on Unix-like systems as fallback;
-- `%TEMP%` on Windows when relevant;
-- filename pattern `architecture-review-<timestamp>.html`.
-
-Open it when the environment supports this:
-
-- macOS: `open <path>`;
-- Linux: `xdg-open <path>`;
-- Windows: `start <path>`.
-
 Tell Dave the absolute path.
 
 Follow [HTML-REPORT.md](HTML-REPORT.md) for the full scaffold, diagram patterns,
@@ -180,20 +139,6 @@ Report safety rules:
 - Escape repo-derived text before placing it in HTML or Mermaid labels.
 - Do not use raw `innerHTML` for file paths, symbols, code excerpts, or repo text.
 - Escape `<`, `>`, `&`, `"`, and `'` in repo-derived values.
-
-Each candidate card should include:
-
-- title;
-- recommendation strength: `Strong`, `Worth exploring`, or `Speculative`;
-- dependency category when useful;
-- files and modules involved;
-- problem in one sentence;
-- proposed deepening in one sentence;
-- benefits in terms of locality, leverage, and test surface;
-- before and after visualisation;
-- ADR conflict callout when the friction justifies revisiting the ADR.
-
-End with a top recommendation.
 
 After the report, ask which candidate to explore. Do not submit a Seeds plan yet.
 
@@ -311,28 +256,6 @@ test strategy.
 
 When interface choice matters, design it more than once. Use
 [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md) for the full process.
-
-Frame constraints first: concept, callers, dependency category, seam placement, adapters,
-and tests.
-
-Produce 3 or more materially different alternatives when useful:
-
-1. Minimal interface: 1 to 3 entry points, maximum leverage.
-2. Flexible interface: extension-friendly, handles varied callers.
-3. Caller-first interface: common path is trivial.
-4. Ports-and-adapters interface when cross-seam dependencies justify it.
-
-If subagents or orchestration are available, run alternatives in parallel with independent
-briefs. If not, design directly and say so.
-
-Each option should include:
-
-- interface shape, including invariants and error modes;
-- usage example;
-- what the implementation hides;
-- dependency and adapter strategy;
-- test strategy through the interface;
-- trade-offs in depth, locality, seam placement, and caller leverage.
 
 Use a checkpoint for selection when there are 2 to 4 strong options. Previews may
 include short code sketches.
