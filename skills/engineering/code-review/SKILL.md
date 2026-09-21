@@ -1,10 +1,9 @@
 ---
 name: code-review
 description: >-
-  Review the current checkout's branch, pull request, or work-in-progress change
-  on two independent axes: repository standards and Seeds-backed implementation
-  intent. Use when reviewing changes since a fixed point or when an implementation
-  workflow needs actionable findings returned to the parent agent for remediation.
+  Review the current checkout's branch, pull request, or work-in-progress change.
+  Use when reviewing changes since a fixed point or when an implementation workflow
+  needs actionable findings returned to the parent agent for remediation.
 license: MIT (adapted from Matt Pocock's code-review skill; see ATTRIBUTION.md)
 metadata:
   source: "Adapted from Matt Pocock's MIT-licensed code-review skill."
