@@ -61,11 +61,22 @@ directory). `SYSTEMONE_API_URL` still overrides the default local-first
 resolution — grading scripts rely on it. (An explicit caller arg such as
 `--hosted` outranks it; see REFERENCE.md.)
 
-`questions.json` shape (`criteria` maps options to rubric descriptions; for
-`score` it is an ordered array of level descriptions):
+`questions.json` shape — `criteria` maps option names to rubric
+descriptions (`choice`), `true`/`false` descriptions (`noul`), or an
+ordered array of level descriptions (`score`). For `noul`, `criteria` is
+optional — the rubric sharpens the judgment when a bare question is
+ambiguous:
 
 ```json
 {
+  "should_verify": {
+    "type": "noul",
+    "instructions": "Does the report claim the fix was verified?",
+    "criteria": {
+      "true": "The report states the fix was verified",
+      "false": "The report makes no verification claim"
+    }
+  },
   "evidence_type": {
     "type": "choice",
     "instructions": "What does the statement establish about socket cleanup?",
