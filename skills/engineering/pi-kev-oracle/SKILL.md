@@ -3,8 +3,7 @@ name: pi-kev-oracle
 description: >-
   Consult the local Pi-Kev decision model for fast, typed, probabilistic
   semantic judgments: noul yes/no probabilities, one-of-a-set choices,
-  ordered scores. Strong at agent-workflow and diff semantics; weak at
-  arithmetic. Use when a task needs semantic classification, routing,
+  ordered scores. Use when a task needs semantic classification, routing,
   ranking, evidence-strength or modality judgments, or Pi-Kev-vs-Jev
   benchmarking.
 license: MIT
