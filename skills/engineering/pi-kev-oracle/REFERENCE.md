@@ -37,7 +37,8 @@ Precedence, highest first:
 2. `SYSTEMONE_API_URL` env var (grading scripts rely on this)
 3. Local service if a TCP probe to `127.0.0.1:8012` succeeds
 4. Fail closed: local service down + nothing set → error, nothing sent
-   (start the service, set `SYSTEMONE_API_URL`, or pass `--hosted`)
+   (restart the service per Service management, set `SYSTEMONE_API_URL`,
+   or pass `--hosted`)
 
 `jev_cli.py status` shows the resolved endpoint and whether the local
 service is up. Responses carry `"endpoint": "local" | "hosted"`. Hosted

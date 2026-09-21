@@ -103,10 +103,15 @@ state into one request. Reference nested state with backticked paths like
   points?", "more than 50%?"). Reword as semantic categories or compute
   numbers in code and ask only about meaning.
 
+Calibration measurements live in the eval SSOT (`baselines.json`) — see
+Benchmark context in `REFERENCE.md`.
+
 ## Fallbacks
 
-1. Local service down → restart it (it self-heals crashes):
-   `launchctl bootstrap gui/501 ~/Library/LaunchAgents/local.pi-kev-4b.plist`
+1. Local service down → restart it (it self-heals crashes; bootstrap alone
+   fails when the job is still loaded, so boot out first):
+   `launchctl bootout gui/501/local.pi-kev-4b 2>/dev/null;
+   launchctl bootstrap gui/501 ~/Library/LaunchAgents/local.pi-kev-4b.plist`
    — full service management in `REFERENCE.md`.
 2. Internal state + local down → heuristics, or defer. NEVER route internal
    state to hosted Jev to "get an answer anyway".
