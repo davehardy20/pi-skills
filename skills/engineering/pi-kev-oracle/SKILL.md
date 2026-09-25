@@ -130,7 +130,9 @@ evidence (not verdict), `kev: null` when the server is down.
   comment triage (actionable + action on review comments), test-failure
   triage (`is_flake` gates the re-run policy before root-causing), and the
   mulch durable-gate (fail-closed: 0.35–0.5 zone skips recording). Consult
-  them at their triggers until each graduates or is refuted.
+  them at their triggers until each graduates or is refuted. If that file
+  is absent, the arms are inactive on this machine — only the adopted
+  NIT-triage rule above is self-contained here.
 
 When adding a new rule: define the trigger, questions, decision thresholds,
 and log path in an ARMS-style doc first; adopt only after measured accuracy.
