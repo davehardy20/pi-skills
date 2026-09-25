@@ -82,7 +82,10 @@ outcome.
    duplicative) and `action` choice (`fix_now` | `skip_with_reason` |
    `ask_dave`). Apply: actionable ≥ 0.5 → follow `action`; < 0.35 → skip
    with a one-line reason on the thread; 0.35–0.5 judgment zone — prefer
-   skip for NIT-class, act for code findings. kev is evidence, never
+   skip for NIT-class, act for code findings. The preflight governs
+   optional-suggestion and NIT-class items only — a required-fix
+   classification holds unless the finding itself is disproved. kev is
+   evidence, never
    verdict; consult state must be public-shaped (no blind calls, prior
    verdicts, or Dave decisions). Log rows to
    `~/tools/pi-kev/experiments/workflow-arms/comment-triage.jsonl`; if the

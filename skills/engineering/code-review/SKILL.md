@@ -197,7 +197,9 @@ a plan outcome.
 
 ## 6. Triage NIT-class findings (pi-kev, adopted rule)
 
-When this review feeds a gated PR round, triage before remediation:
+When this review feeds a gated PR round, triage before remediation. This
+step runs in the parent context after the report returns — the
+remediation owner triages and logs; review sub-agents never log:
 
 - Record your own fix/skip call per finding first (blind, before any consult).
 - Batch one pi-kev consult (pi-kev-oracle skill) with a `blocks_merge` noul
