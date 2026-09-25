@@ -194,3 +194,24 @@ store it elsewhere. The parent agent should address accepted findings, run the
 relevant validation, and rerun this review when it is acting as a quality gate.
 A clean report is review evidence only; it does not close Seeds work or declare
 a plan outcome.
+
+## 6. Triage NIT-class findings (pi-kev, adopted rule)
+
+When this review feeds a gated PR round, triage before remediation:
+
+- Record your own fix/skip call per finding first (blind, before any consult).
+- Batch one pi-kev consult (pi-kev-oracle skill) with a `blocks_merge` noul
+  per NIT-class finding. Criteria: true = real defect or correctness/CI
+  risk that must be fixed before merge; false = style, tradeoff call,
+  platform out of scope, doc-only.
+- Apply: skip NIT-class when noul < 0.35 (note the skip reason); fix when
+  ≥ 0.5 or severity above NIT; 0.35–0.5 is a judgment zone — prefer skip
+  for NITs, fix for code findings. Non-NIT findings skip the consult and
+  go straight to remediation.
+- kev output is evidence, never verdict; gates, tests, and Dave decide.
+  Consult state must be public-shaped: never include your blind call or
+  prior verdicts.
+- Log every consult row to
+  `~/tools/pi-kev/experiments/pr-triage-dogfood/log.jsonl`. Server or log
+  path unavailable → triage on your own judgment and say so in the report.
+  Measured accuracy: 93% on 59 ground-truthed findings.
