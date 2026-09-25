@@ -85,8 +85,10 @@ outcome.
    skip for NIT-class, act for code findings. kev is evidence, never
    verdict; consult state must be public-shaped (no blind calls, prior
    verdicts, or Dave decisions). Log rows to
-   `~/tools/pi-kev/experiments/workflow-arms/comment-triage.jsonl`; server
-   or log path unavailable → your call, note `kev: null`. Provisional arm
+   `~/tools/pi-kev/experiments/workflow-arms/comment-triage.jsonl`; if the
+   arms file (`~/tools/pi-kev/experiments/workflow-arms/ARMS.md`), the
+   oracle, or the log path is unavailable, the arm is inactive — use
+   ordinary classification and note `kev: null`. Provisional arm
    (small n so far, all concordant or rule-validated): expect refinement
    as rows accumulate.
 
