@@ -74,6 +74,27 @@ outcome.
      - **Optional suggestion**: style, naming, readability, or low-risk polish.
      - **No action**: stale, already fixed, informational, or not applicable.
 
+   **Triage preflight (pi-kev, provisional Arm A).** For unresolved,
+   non-outdated comments, make your classification call first, then batch
+   one pi-kev consult (pi-kev-oracle skill) with per-comment questions:
+   `actionable` noul (true = concrete defect or instruction that changes
+   the diff or process; false = chatty, preference, hallucinated,
+   duplicative) and `action` choice (`fix_now` | `skip_with_reason` |
+   `ask_dave`). Apply: actionable ≥ 0.5 → follow `action`; < 0.35 → skip
+   with a one-line reason on the thread; 0.35–0.5 judgment zone — prefer
+   skip for NIT-class, act for code findings. The preflight governs
+   optional-suggestion and NIT-class items only — a required-fix
+   classification holds unless the finding itself is disproved. kev is
+   evidence, never
+   verdict; consult state must be public-shaped (no blind calls, prior
+   verdicts, or Dave decisions). Log rows to
+   `~/tools/pi-kev/experiments/workflow-arms/comment-triage.jsonl`; if the
+   arms file (`~/tools/pi-kev/experiments/workflow-arms/ARMS.md`), the
+   oracle, or the log path is unavailable, the arm is inactive — use
+   ordinary classification and note `kev: null`. Provisional arm
+   (small n so far, all concordant or rule-validated): expect refinement
+   as rows accumulate.
+
 5. **Implement only required changes**
    - Stay on the PR head branch and do not mutate closed or merged PRs.
    - Follow the target repo's local guidance, Seeds state, and test conventions.
