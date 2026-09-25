@@ -215,5 +215,6 @@ remediation owner triages and logs; review sub-agents never log:
   prior verdicts.
 - Log every consult row to
   `~/tools/pi-kev/experiments/pr-triage-dogfood/log.jsonl`. Server or log
-  path unavailable → triage on your own judgment and say so in the report.
+  path unavailable → triage on your own judgment and state the fallback
+  in the triage outcome (the review report has already been delivered).
   Measured accuracy: 93% on 59 ground-truthed findings.
