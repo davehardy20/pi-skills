@@ -114,6 +114,29 @@ state into one request. Reference nested state with backticked paths like
 Calibration measurements live in the eval SSOT (`baselines.json`) — see
 Benchmark context in `REFERENCE.md`.
 
+## Wired decision rules
+
+Decision rules that route real workflow through this oracle. All share the
+dogfood discipline: blind call first, consult second, kev output is
+evidence (not verdict), `kev: null` when the server is down.
+
+- **PR-gate NIT triage (adopted 2026-09-21, `kev-no-block-skip-rule`)**:
+  during gated PR rounds, batch a `blocks_merge` noul per reviewer finding.
+  Skip NIT-class findings when noul < 0.35; fix when ≥ 0.5 or non-NIT
+  severity; 0.35–0.5 is a judgment zone (prefer skip for NITs). Log:
+  `~/tools/pi-kev/experiments/pr-triage-dogfood/log.jsonl`.
+- **Provisional arms** (decision rules live in
+  `~/tools/pi-kev/experiments/workflow-arms/ARMS.md`, one JSONL log each):
+  comment triage (actionable + action on review comments), test-failure
+  triage (`is_flake` gates the re-run policy before root-causing), and the
+  mulch durable-gate (fail-closed: 0.35–0.5 zone skips recording). Consult
+  them at their triggers until each graduates or is refuted. If that file
+  is absent, the arms are inactive on this machine — only the adopted
+  NIT-triage rule above is self-contained here.
+
+When adding a new rule: define the trigger, questions, decision thresholds,
+and log path in an ARMS-style doc first; adopt only after measured accuracy.
+
 ## Fallbacks
 
 1. Local service down → restart it (it self-heals crashes; bootstrap alone
