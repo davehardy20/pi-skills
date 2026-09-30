@@ -19,6 +19,10 @@ Local Pi skills package for Dave's workflow.
   TypeScript compiler API, and reports the worst functions first with a
   `--fail-over` quality-gate exit code. Lineage: crap4j → crap4clj →
   crap4go → crap4java → crap4ts.
+- `email-archive` — searches Dave's digest archive (Hermes HTTP API on the
+  LAN) with FTS5 for CVEs, actors, tools, and keywords across the talkback,
+  hn-security, sec-ai-news, github-trending, vuln-watch, ai-sec-research,
+  and threat-intel digests; read-only over HTTP.
 - `opsec-framework-doc` — creates structured OpSec procedure documents from
   notes, research, existing Markdown, and script-heavy procedures, with
   archive/history safety and TypeScript document-management helpers.
