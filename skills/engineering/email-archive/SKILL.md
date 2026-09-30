@@ -21,8 +21,9 @@ API returns.
   Tailscale exit node).
 - HTTP API only — never SSH to the bench for archive reads.
 - Read-only surface: search, list, fetch. There is no write path.
-- Drive it with `bash` + `curl -s --max-time 15`. If unreachable, report once
-  and stop; do not retry-loop.
+- Drive it with `bash` + `curl -sf --max-time 15` (`-f` fails on HTTP
+  4xx/5xx before any pipe). If unreachable, report once and stop; do not
+  retry-loop. If the session has no shell, say so and stop.
 
 ## Endpoints
 
@@ -71,7 +72,7 @@ Validated recipes — keep output bounded, large raw dumps get context-pruned:
 B=http://192.168.0.157:8737
 
 # Compact hit list
-curl -s --max-time 15 -G "$B/search" \
+curl -sf --max-time 15 -G "$B/search" \
   --data-urlencode "q=ransomware OR wiper" \
   --data-urlencode "limit=20" | python3 -c "
 import json,sys
@@ -80,7 +81,7 @@ for r in d['results']:
     print(f\"{r['sent_at'][:10]} [{r['digest']}/{r['section']}] {r['title']}\")"
 
 # Full items from one email, filtered by keyword
-curl -s --max-time 15 "$B/email?id=411" | python3 -c "
+curl -sf --max-time 15 "$B/email?id=411" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 print('Subject:', d.get('subject'), '| Sent:', d.get('sent_at'))
