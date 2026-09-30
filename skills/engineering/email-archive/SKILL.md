@@ -44,7 +44,7 @@ meta{...}, rank`.
 1. **Freshness** — when coverage matters, `GET /stats` first: an empty or stale
    digest list changes how to read zero-result searches.
 2. **Search** — build one balanced FTS5 query (rules below), send with
-   `curl -G --data-urlencode` so quoting survives the shell.
+   `curl -sf -G --data-urlencode` so quoting survives the shell.
 3. **Extract** — pipe JSON through `python3 -c` to print compact lines; never
    paste raw JSON into the reply.
 4. **Detail** — for items that matter, `GET /email?id=<id>` and pull the
