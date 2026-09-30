@@ -21,8 +21,9 @@ API returns.
   Tailscale exit node).
 - HTTP API only — never SSH to the bench for archive reads.
 - Read-only surface: search, list, fetch. There is no write path.
-- Drive it with `bash` + `curl -sf --max-time 15` (`-f` fails on HTTP
-  4xx/5xx before any pipe). If unreachable, report once and stop; do not
+- Drive it with `bash` + `curl -fsS --max-time 15`: `-f` rejects HTTP
+  4xx/5xx, and `-S` shows errors despite `-s`. Capture the response and check
+  curl success before parsing. If unreachable, report once and stop; do not
   retry-loop. If the session has no shell, say so and stop.
 
 ## Endpoints
@@ -44,9 +45,10 @@ meta{...}, rank`.
 1. **Freshness** — when coverage matters, `GET /stats` first: an empty or stale
    digest list changes how to read zero-result searches.
 2. **Search** — build one balanced FTS5 query (rules below), send with
-   `curl -sf -G --data-urlencode` so quoting survives the shell.
-3. **Extract** — pipe JSON through `python3 -c` to print compact lines; never
-   paste raw JSON into the reply.
+   `curl -fsS -G --data-urlencode` so URL encoding preserves the query.
+   URL encoding does not replace FTS5 quoting for literals.
+3. **Extract** — only after curl succeeds, pass the captured JSON through
+   `python3 -c` to print compact lines; never paste raw JSON into the reply.
 4. **Detail** — for items that matter, `GET /email?id=<id>` and pull the
    relevant items by keyword.
 
@@ -56,7 +58,11 @@ from an API response, and zero results are reported as zero — never invented.
 ## FTS5 rules
 
 - Operators: `AND OR NOT` (uppercase), `"exact phrase"`, `prefix*`,
-  `NEAR(a b, N)`, `-excluded`.
+  `NEAR(a b, N)`. Exclude with binary NOT: `ransomware NOT wiper`;
+  a leading hyphen is not FTS5 exclusion syntax.
+- Double-quote CVEs and punctuation-bearing literals: `"CVE-2026-19490"`.
+  Send with `--data-urlencode 'q="CVE-2026-19490"'`; the inner double quotes
+  must reach FTS5. A bare CVE's hyphens are parsed as query syntax and fail.
 - **Malformed queries 500** with a raw FTS5 error (e.g. unterminated `"`).
   Check quote balance before sending.
 - `days` must be an integer — anything else 500s with a raw Python traceback.
@@ -72,16 +78,21 @@ Validated recipes — keep output bounded, large raw dumps get context-pruned:
 B=http://192.168.0.157:8737
 
 # Compact hit list
-curl -sf --max-time 15 -G "$B/search" \
+if response=$(curl -fsS --max-time 15 -G "$B/search" \
   --data-urlencode "q=ransomware OR wiper" \
-  --data-urlencode "limit=20" | python3 -c "
+  --data-urlencode "limit=20"); then
+  printf '%s' "$response" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 for r in d['results']:
     print(f\"{r['sent_at'][:10]} [{r['digest']}/{r['section']}] {r['title']}\")"
+else
+  printf '%s\n' 'Archive request failed; response not parsed.' >&2
+fi
 
-# Full items from one email, filtered by keyword
-curl -sf --max-time 15 "$B/email?id=411" | python3 -c "
+# Full items from one email, filtered by keyword (replace id with a search hit)
+if response=$(curl -fsS --max-time 15 "$B/email?id=411"); then
+  printf '%s' "$response" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 print('Subject:', d.get('subject'), '| Sent:', d.get('sent_at'))
@@ -92,6 +103,9 @@ for it in d.get('items',[]):
         print('   title:', it.get('title'))
         print('   snip :', (it.get('snippet') or '')[:200])
         print('   url  :', it.get('url'))"
+else
+  printf '%s\n' 'Archive request failed; response not parsed.' >&2
+fi
 ```
 
 ## Digests
