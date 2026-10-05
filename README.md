@@ -30,6 +30,12 @@ Local Pi skills package for Dave's workflow.
   :8012) for typed probabilistic judgments: noul yes/no, one-of-a-set
   choices, ordered scores. Fail-closed endpoint resolution; hosted Jev is an
   explicit opt-in. Procedure detail in its `REFERENCE.md`.
+- `pr` — drafts or improves PR descriptions with Summary, Evidence, and
+  Merge Danger sections. Writing aid only: no new gate or PR automation;
+  visuals are optional and existing review/publication rules still apply.
+- `retro` — manual-only, read-only coding-session retrospectives. Loads
+  `writing-for-agents`, reports evidence-backed environment improvements,
+  and offers approved follow-ups through Seeds without automatic mutations.
 - `post-merge` — runs PR post-merge closeout for Pi/Seeds repos, including
   merge verification, local branch updates, Seeds follow-up handling, and
   cleanup reporting.
@@ -54,6 +60,9 @@ Local Pi skills package for Dave's workflow.
 
 - `teach` — builds stateful learning workspaces with missions, trusted
   resources, short HTML lessons, references, and learning records.
+- `writing-for-agents` — reference for agent-facing skills, steering files,
+  and documents, with Pi-native skill mechanics. Used by `retro`; the existing
+  `writing-great-skills` reference remains unchanged.
 - `writing-great-skills` — explains the vocabulary and principles for writing
   predictable, maintainable Pi skills.
 
@@ -63,6 +72,11 @@ Local Pi skills package for Dave's workflow.
   tone, and voice.
 
 ## Attribution
+
+`pr`, `retro`, and `writing-for-agents` are adapted from Matt Pocock's
+MIT-licensed [Skills For Real Engineers](https://github.com/mattpocock/skills).
+Each includes an `ATTRIBUTION.md` with the upstream MIT notice. `pr` also
+preserves Dex Horthy / Humanlayer's `show-me` credits in its `CREDITS.md`.
 
 `seeds-architecture-review` is inspired by
 [Matt Pocock's Skills For Real Engineers](https://github.com/mattpocock/skills),
@@ -160,6 +174,18 @@ Invoke directly:
 ```
 
 ```text
+/skill:pr draft this branch's PR description from its diff and validation results
+```
+
+```text
+/skill:retro review this coding session for environment improvements
+```
+
+```text
+/skill:writing-for-agents review this AGENTS.md for clear context pointers
+```
+
+```text
 /skill:post-merge PR 123 was merged; close out the Seeds work
 ```
 
@@ -183,6 +209,9 @@ candidate-specific Seeds plan, and open a PR before treating implementation as c
 
 The package skills are conservative about writes:
 
+- `pr` returns a draft body only; the caller owns any PR creation/update and
+  existing publication gates. `retro` returns recommendations only; changes
+  to code, trackers, global instructions, or Mulch need a separate approved workflow.
 - `code-review` reads Seeds and repository evidence but never mutates them; its
   findings return to the parent agent, which owns remediation and validation.
 
