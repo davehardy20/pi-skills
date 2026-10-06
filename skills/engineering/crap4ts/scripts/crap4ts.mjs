@@ -2026,20 +2026,20 @@ function runCoverage(
 		stderr.write(
 			"crap4ts: package-manager preflight failed; ask before changing lockfiles or package metadata\n",
 		);
-		return null;
+		return { coverageMap: null, exitCode: 0 };
 	}
 	if (!command) {
 		stderr.write(
 			"crap4ts: no coverage runner found (test:coverage script, vitest, or jest); reporting coverage as N/A\n",
 		);
-		return null;
+		return { coverageMap: null, exitCode: 0 };
 	}
 	if (preflight.coverage.missing.length > 0) {
 		stderr.write(formatDependencyPreflight(preflight));
 		stderr.write(
 			"crap4ts: coverage preflight failed; reporting coverage as N/A instead of running an under-provisioned runner\n",
 		);
-		return null;
+		return { coverageMap: null, exitCode: 0 };
 	}
 	const coverageDir = join(rootDir, "coverage");
 	rmSync(coverageDir, { recursive: true, force: true });
@@ -2053,8 +2053,9 @@ function runCoverage(
 		stderr.write(
 			`crap4ts: coverage command failed to start: ${result.error.message}\n`,
 		);
-		return null;
+		return { coverageMap: null, exitCode: 1 };
 	}
+	const exitCode = result.status === 0 ? 0 : 1;
 	if (result.status !== 0) {
 		stderr.write(
 			`crap4ts: coverage command exited ${result.status}; using artifacts anyway\n`,
@@ -2065,15 +2066,20 @@ function runCoverage(
 		stderr.write(
 			`crap4ts: ${finalPath} not found; reporting coverage as N/A (the command must produce coverage/coverage-final.json)\n`,
 		);
-		return null;
+		return { coverageMap: null, exitCode };
 	}
 	try {
-		return parseCoverageData(JSON.parse(readFileSync(finalPath, "utf8")));
+		return {
+			coverageMap: parseCoverageData(
+				JSON.parse(readFileSync(finalPath, "utf8")),
+			),
+			exitCode,
+		};
 	} catch (error) {
 		stderr.write(
 			`crap4ts: failed to parse coverage-final.json: ${error.message}\n`,
 		);
-		return null;
+		return { coverageMap: null, exitCode };
 	}
 }
 
@@ -2197,7 +2203,7 @@ options:
   --fail-over N          exit 2 when any CRAP score exceeds N
   path fragments         analyze only files whose relative path contains any fragment
 
-exit codes: 0 ok, 1 usage error, 2 threshold exceeded
+exit codes: 0 ok, 1 usage or coverage command error, 2 threshold exceeded
 `);
 }
 
@@ -2323,8 +2329,8 @@ export function main(
 		return 0;
 	}
 
-	const coverageMap = noCoverage
-		? null
+	const coverageResult = noCoverage
+		? { coverageMap: null, exitCode: 0 }
 		: runCoverage(rootDir, pkg, coverageCommand, stderr, preflight);
 
 	const functions = [];
@@ -2338,8 +2344,11 @@ export function main(
 		}
 	}
 
-	const rows = sortRows(buildRows(functions, coverageMap, rootDir, stderr));
+	const rows = sortRows(
+		buildRows(functions, coverageResult.coverageMap, rootDir, stderr),
+	);
 	stdout.write(`${formatReport(rows)}\n`);
+	if (coverageResult.exitCode !== 0) return 1;
 
 	if (failOver != null) {
 		const exceeded = evaluateThreshold(rows, failOver);

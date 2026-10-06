@@ -2465,7 +2465,7 @@ test("CLI characterization: help exits before project preflight", async () => {
 			);
 			assert.match(
 				result.stdout,
-				/exit codes: 0 ok, 1 usage error, 2 threshold exceeded/,
+				/exit codes: 0 ok, 1 usage or coverage command error, 2 threshold exceeded/,
 			);
 			assert.equal(result.stderr, "");
 		}
@@ -2680,6 +2680,82 @@ test("CLI characterization: coverage without a threshold exits 0", async () => {
 		assert.equal(result.status, 0, result.stderr);
 		assert.match(result.stdout, /risky\s+src\/core\.ts\s+4\s+60\.0%\s+5\.0/);
 		assert.equal(result.stderr, "");
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test.each([
+	{ name: "report-only", args: [] },
+	{ name: "passing score gate", args: ["--fail-over", "30"] },
+	{ name: "breached score gate", args: ["--fail-over", "1"] },
+])("CLI fails when coverage fails: $name", async ({ args }) => {
+	const dir = await createTempProject();
+	try {
+		await writePartialCoverageCommand(dir);
+		const result = runCli(
+			dir,
+			"--coverage-command",
+			'node seed-coverage.cjs && node -e "process.exit(7)"',
+			...args,
+		);
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stdout, /risky\s+src\/core\.ts\s+4\s+60\.0%\s+5\.0/);
+		assert.match(result.stderr, /coverage command exited 7/);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test.each([
+	{ name: "missing", artifactCode: "", diagnostic: /not found/ },
+	{
+		name: "malformed",
+		artifactCode: 'fs.writeFileSync("coverage/coverage-final.json", "{");',
+		diagnostic: /failed to parse coverage-final\.json/,
+	},
+])("main fails with $name artifacts", async ({ artifactCode, diagnostic }) => {
+	const dir = await createTempProject();
+	try {
+		await writeFile(
+			join(dir, "fail-coverage.cjs"),
+			'const fs = require("node:fs");\n' +
+				'fs.mkdirSync("coverage", { recursive: true });\n' +
+				`${artifactCode}\nprocess.exitCode = 7;\n`,
+			"utf8",
+		);
+		const result = runMainInProcess(
+			dir,
+			"--coverage-command",
+			"node fail-coverage.cjs",
+			"--fail-over",
+			"30",
+		);
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stdout, /risky\s+src\/core\.ts\s+4\s+N\/A\s+N\/A/);
+		assert.match(result.stderr, /coverage command exited 7/);
+		assert.match(result.stderr, diagnostic);
+	} finally {
+		const { rm } = await import("node:fs/promises");
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("CLI returns exit 1 when the coverage shell terminates by signal", async () => {
+	const dir = await createTempProject();
+	try {
+		const result = runCli(
+			dir,
+			"--coverage-command",
+			"kill -TERM $$",
+			"--fail-over",
+			"30",
+		);
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stdout, /risky\s+src\/core\.ts\s+4\s+N\/A\s+N\/A/);
+		assert.match(result.stderr, /coverage command/);
 	} finally {
 		const { rm } = await import("node:fs/promises");
 		await rm(dir, { recursive: true, force: true });
