@@ -298,3 +298,7 @@ closure.
 - Use `--fail-over N` as a CI or quality-gate closeout check (exit 2 on
   breach, mirroring crap4java's exit-code gate). N/A-coverage rows never breach
   the gate; pair it with a coverage-required check when that matters.
+- A failed coverage command returns exit 1, including signal termination or
+  failure to start. Available coverage artifacts are still printed for diagnosis;
+  they may be partial. Coverage command failure takes precedence over a score
+  breach, with or without `--fail-over`.
