@@ -25,7 +25,7 @@ This repository packages local Pi skills.
 - Skill root: `skills/`
 - Skills:
   - `skills/engineering/code-review/SKILL.md`
-  - `skills/engineering/codex-pr-comment/SKILL.md`
+  - `skills/engineering/pr-review-comment/SKILL.md`
   - `skills/engineering/crap4ts/SKILL.md`
   - `skills/engineering/email-archive/SKILL.md`
   - `skills/engineering/opsec-framework-doc/SKILL.md`

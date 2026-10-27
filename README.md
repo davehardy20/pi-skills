@@ -9,9 +9,9 @@ Local Pi skills package for Dave's workflow.
 - `code-review` — reviews changes on independent Standards and Seeds-backed
   Intent axes, then returns actionable findings directly to the parent agent
   without writing review outcomes back to Seeds.
-- `codex-pr-comment` — reads Codex connector PR review comments,
-  checks unresolved non-outdated review threads, implements required fixes, and
-  reports validation.
+- `pr-review-comment` — reads feedback from the configured reviewer using
+  `~/.pi/agent/pr-review-policy.json`, checks all unresolved threads, implements
+  authorized required fixes, and reports validation and fixed-thread resolution.
 - `crap4ts` — CRAP metric (originally Change Risk Analysis and Prediction,
   later reframed as Change Risk Anti-Patterns;
   `CC² × (1 − coverage)³ + CC`) for JavaScript/TypeScript: runs the target
@@ -190,7 +190,7 @@ Invoke directly:
 ```
 
 ```text
-/skill:codex-pr-comment PR 120 has a Codex review comment; read it and implement if required
+/skill:pr-review-comment PR 120 has review feedback; read it and implement required fixes
 ```
 
 ```text
