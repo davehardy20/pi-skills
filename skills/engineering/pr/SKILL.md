@@ -19,9 +19,10 @@ metadata:
 # PR Description
 
 This is a writing aid, not a PR workflow. Draft or improve the body; the
-calling workflow still owns existing review and publication gates, CI, Codex
-feedback, and merge decisions. This skill does not run Git/GitHub mutations
-or add a new gate.
+calling workflow still owns existing review and publication gates, CI,
+feedback from the configured external reviewer in
+`~/.pi/agent/pr-review-policy.json`, and merge decisions. This skill does not
+run Git/GitHub mutations or add a new gate.
 
 Prefer the repository's required PR template when one exists; fit the sections
 below into it rather than replacing required fields. Include the relevant
